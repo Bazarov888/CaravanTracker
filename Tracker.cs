@@ -140,14 +140,24 @@ static class Greeter
         var greet = Welcome.Greet(InWorld, users.Keys, _primed);
         _primed = true;
         if (!Settings.Welcome.Value) return;
-        string color = Settings.Color(Settings.TextColor, "#FFFFFF");
         foreach (var id in greet)
         {
             var own = Languages.Of(id);
             foreach (var lang in own != null ? new[] { own } : new[] { "en", "ru" })
-                Chat.Send(em, users[id], $"<color={color}>{L.In(lang, "welcome")}</color>");
+                Chat.Send(em, users[id], Line(lang));
         }
         if (greet.Count > 0) Plugin.Trace($"CaravanTracker: welcome sent to {greet.Count} players");
+    }
+
+    // The server's own text from the config (WelcomeEn / WelcomeRu), or the mod's with the commands highlighted.
+    static string Line(string lang)
+    {
+        string own = (lang == "ru" ? Settings.WelcomeRu : Settings.WelcomeEn).Value?.Trim();
+        if (!string.IsNullOrEmpty(own)) return own;
+        string text = Settings.Color(Settings.TextColor, "#FFFFFF");
+        string command = Settings.Color(Settings.CommandColor, "#7CFC7C");
+        string Cmd(string c) => $"<color={command}>{c}</color>";
+        return $"<color={text}>{L.In(lang, "welcome", Cmd(".cv l"), Cmd(".cv m"), Cmd(".cv lang en"), Cmd(".cv lang ru"))}</color>";
     }
 }
 

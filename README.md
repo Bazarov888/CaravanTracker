@@ -70,6 +70,7 @@ For admins:
 | Chat | AnnounceVanilla | `true` | Also announce caravans the game spawned by itself; `false` = only the mod's |
 | Chat | RouteCommandsForAll | `true` | `.cv r` and `.cv rm` for every player; `false` = admins only |
 | Chat | Welcome | `true` | Two lines to a player who has just come into the world: what the mod does and how to pick the language |
+| Chat | WelcomeEn, WelcomeRu | empty | Your own welcome lines instead of the mod's; color tags work, about 450 bytes at most (a Russian letter is 2 bytes) |
 | Chat | TitleColor, TextColor, CommandColor | gold, white, green | Announcement colors |
 | AutoStart | Source | `Both` | `Mod` = only the mod starts caravans, the game no longer spawns them near players; `Game` = only the game, auto-start off; `Both` |
 | AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off. With `Source = Mod` and `0` there are no caravans at all; the log warns about it |

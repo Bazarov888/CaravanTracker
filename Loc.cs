@@ -152,7 +152,7 @@ static class L
         ["icons.head"] = "Icons: {0}, page {1}/{2}. All of them are written to the server log.",
         ["mode.bad"] = "Mode: direct or proxy.",
         ["lang.ok"] = "Language: English. Only for you; other players keep theirs.",
-        ["welcome"] = "This server shows every caravan on the map and starts new caravans in your act. Caravans: .cv l. Language: .cv lang en / .cv lang ru",
+        ["welcome"] = "Welcome! Every caravan here is shown on the map, and new ones set out in your act. {0} - caravans by distance, {1} - map marker on the nearest. Language: {2} / {3}",
 
         ["auto.off"] = "Auto-start is off. Turn it on: .cv auto <minutes>",
         ["auto.status"] = "Auto-start: every {0} min per act, {1}, at most {2} per act and {3} in total. On the road now: {4}.",
@@ -275,7 +275,7 @@ static class L
         ["icons.head"] = "Иконок: {0}, страница {1}/{2}. Все записаны в лог сервера.",
         ["mode.bad"] = "Режим: direct или proxy.",
         ["lang.ok"] = "Язык: русский. Только для тебя, у остальных игроков свой.",
-        ["welcome"] = "На этом сервере все караваны видны на карте, а мод сам запускает новые в твоём акте. Караваны: .cv l. Язык: .cv lang ru / .cv lang en",
+        ["welcome"] = "Добро пожаловать! Здесь все караваны видны на карте, а новые выходят в твоём акте. {0} - список караванов, {1} - метка на ближайшем. Язык: {2} / {3}",
 
         ["auto.off"] = "Автозапуск выключен. Включить: .cv auto <минуты>",
         ["auto.status"] = "Автозапуск: раз в {0} мин в каждом акте, {1}, не больше {2} на акт и {3} всего. Сейчас едут: {4}.",

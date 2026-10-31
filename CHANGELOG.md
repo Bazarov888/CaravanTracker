@@ -8,7 +8,7 @@
 - With `Source = Mod`, routes standing at their last stop are blocked too, not only routes waiting for a new squad. A player walking near such a route wakes it, the game resets it and could spawn its own caravan before the next check.
 - The log tells how far from where the route stood the squad appeared.
 - Each player picks their own language with `.cv lang en` or `.cv lang ru` (no longer an admin command that switched it for everyone). Announcements, replies and start messages come in each player's language; `Language` in the config is the default for players who haven't picked one.
-- A player who has just come into the world gets two lines, in English and Russian (or in their own language if they picked one): what the mod does and how to pick the language. Setting `Chat.Welcome`, on by default.
+- A player who has just come into the world gets two lines, in English and Russian (or in their own language if they picked one): what the mod does and how to pick the language. Setting `Chat.Welcome`, on by default; `Chat.WelcomeEn` / `Chat.WelcomeRu` replace the text with the server's own.
 - Long replies (`.cv ss` with several started caravans, `.cv auto`, `.cv a`) are split into several lines. In Russian they could exceed the 512-byte chat limit and get cut or not arrive at all. For a route put back to the start (`ResetToStart`) it warns when the squad appeared where the route stood, i.e. the caravan first walks back to the first stop.
 
 ## 1.0.7

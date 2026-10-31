@@ -24,6 +24,8 @@ static class Settings
     internal static ConfigEntry<bool> AnnounceVanilla;
     internal static ConfigEntry<bool> RouteCommandsForAll;
     internal static ConfigEntry<bool> Welcome;
+    internal static ConfigEntry<string> WelcomeEn;
+    internal static ConfigEntry<string> WelcomeRu;
     internal static ConfigEntry<string> TitleColor;
     internal static ConfigEntry<string> TextColor;
     internal static ConfigEntry<string> CommandColor;
@@ -94,6 +96,10 @@ static class Settings
             "Also announce caravans the game spawned by itself next to a player. false = only caravans started by the mod.");
         Welcome = cfg.Bind("Chat", "Welcome", true,
             "Two lines to a player who has just come into the world: what the mod does and how to pick the language (.cv lang).");
+        WelcomeEn = cfg.Bind("Chat", "WelcomeEn", "",
+            "Your own English welcome line instead of the mod's. Empty = the mod's. Color tags like <color=#7CFC7C>.cv l</color> work. At most about 450 bytes.");
+        WelcomeRu = cfg.Bind("Chat", "WelcomeRu", "",
+            "Your own Russian welcome line instead of the mod's. Empty = the mod's. A Russian letter takes 2 bytes, so at most about 200 letters.");
         RouteCommandsForAll = cfg.Bind("Chat", "RouteCommandsForAll", true,
             "Let every player use .cv routes and .cv rm, which show where all caravan routes are. false = admins only.");
         TitleColor = cfg.Bind("Chat", "TitleColor", "#FFC83C", "Color of the first announcement line (caravan name).");
