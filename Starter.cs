@@ -191,10 +191,11 @@ static partial class Starter
         run.State.Phase = RunPhase.Armed;
     }
 
-    // Puts a route that stands mid-way back to the first stop of its path, the same way the game does it
-    // after a caravan reaches the end: stop index to the start, movement waiting for a new path. The game
-    // spawns a squad at the stop the route stands at, so the caravan then sets out from the start.
-    // A route at its last stop (WaitForDespawn) isn't touched: the game returns it to the start itself.
+    // Puts a route that stands mid-way back to the first stop of its path: stop index to the start, movement
+    // waiting for a new path. A squad appears where the patrol entity stands, so this most likely changes only
+    // where the caravan heads first: it walks back to the first stop and drives the whole route from there.
+    // The "squad appeared" log line tells by the distance. A route at its last stop (WaitForDespawn) isn't
+    // touched: it is woken and the game returns it to the start itself (RunLogic.ReadyToArm).
     static bool ResetToStart(EntityManager em, Entity patrol, Progress stops)
     {
         if (!RouteLogic.NeedsReset(stops, Routes.MoveStatus(em, patrol))) return false;
@@ -378,7 +379,7 @@ static partial class Starter
             // Putting a route back to the start changes its stop number; whether the game also moves the squad
             // there is told by the distance: next to where the route stood means the caravan walks back first.
             if (run.Reset && p != null && !p.AtStart) Plugin.Warn(msg + ", although the route was put back to the start");
-            else if (run.Reset && fromStart < RunLogic.WakeMoved) Plugin.Warn(msg + "; put back to the start, but it appeared where the route stood: it walks to the first stop first");
+            else if (run.Reset && fromStart < RunLogic.SamePlace) Plugin.Warn(msg + "; put back to the start, but it appeared where the route stood: it walks to the first stop first");
             else Plugin.Info(msg);
         }
         foreach (var k in step.Replacements) DestroyUtility.Destroy(em, byKey[k]);

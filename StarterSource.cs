@@ -29,13 +29,13 @@ static partial class Starter
         em.SetComponentData(patrol, (UnitCompositionSpawner)boxed);
     }
 
-    // Source = Mod: right after a start ends, a route that waits for a new caravan is blocked at once,
+    // Source = Mod: right after a start ends, an idle route (SpawnRange.Idle) is blocked at once,
     // not at the next check, so that the game can't spawn its own caravan there in between.
     static void BlockIfWaiting(EntityManager em, Entity patrol)
     {
         if (Paused || !Settings.ModOnly || !em.Exists(patrol)) return;
         var sp = em.GetComponentData<UnitCompositionSpawner>(patrol);
-        if (sp.SpawnerState.ToString() != "WaitingForSpawn") return;
+        if (!SpawnRange.Idle(sp.SpawnerState.ToString())) return;
         if (Caravans.Field(sp, "PlayerRange") is not float2 range) return;
         if (SpawnRange.SourceTarget(true, true, range.x, range.y) is float y) SetRangeY(em, patrol, sp, range.x, y);
         BlockedRoutes.Add(Key(patrol));
@@ -52,7 +52,7 @@ static partial class Starter
             if (IsRunning(r.Patrol) || !em.Exists(r.Patrol)) { BlockedRoutes.Remove(key); continue; }
             var sp = em.GetComponentData<UnitCompositionSpawner>(r.Patrol);
             if (Caravans.Field(sp, "PlayerRange") is not float2 range) continue;
-            bool waiting = sp.SpawnerState.ToString() == "WaitingForSpawn";
+            bool waiting = SpawnRange.Idle(sp.SpawnerState.ToString());
             if (modOnly && !waiting && BlockedRoutes.Contains(key) && Routes.ActiveUnits(em, r.Patrol).Count > 0 && WarnedRoutes.Add(key))
                 Plugin.Warn($"CaravanTracker: route {r.Key}: Source = Mod, but the game spawned a caravan on it by itself " +
                                          $"(range {range.x}-{range.y}). The block doesn't work here; switch back with .cv source both and report it.");

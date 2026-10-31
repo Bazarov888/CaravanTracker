@@ -8,7 +8,7 @@ Players don't need to install anything.
 
 - **Caravans on the map.** Every caravan on the road, every caravan frozen mid-route and every loot container left after a robbed caravan gets a map icon. The icon is visible to all players on the whole map, without discovering the area first.
 - **Announcements.** When a caravan sets out, every online player gets two chat lines. The first one names the caravan and its act, the second one gives the distance and direction from that player and the `.cv m <number>` command that puts a map marker on it.
-- **Auto-start by act.** In vanilla a caravan only spawns when a player happens to be near its route. The mod starts caravans itself: in every act where players are online, at most one new caravan per interval, within the per-act and server limits. Routes standing at the start of their path go first, so a caravan gets the whole way. Nobody online means nothing starts.
+- **Auto-start by act.** In vanilla a caravan only spawns when a player happens to be near its route. The mod starts caravans itself: in every act where players are online, at most one new caravan per interval, within the per-act and server limits. Routes standing at the start or at the end of their path go first, both set out from the first stop, so a caravan gets the whole way; the route started last is skipped while another one is free. Nobody online means nothing starts.
 - **Commands** to list caravans, mark the nearest one, see all routes with their act, and start a caravan on a chosen route.
 
 ## How acts work

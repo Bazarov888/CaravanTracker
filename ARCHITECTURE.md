@@ -119,8 +119,8 @@ settings (range above 1000, zero timers, no freeze tag) and gives them the game'
 
 - `Both`: the game and the mod start caravans.
 - `Game`: auto-start is off; `.cv start` still works.
-- `Mod`: `ApplySource` gives every route that waits for a squad (`SpawnerState = WaitingForSpawn`) and isn't
-  being started by the mod the blocked range, and every other route the game's range back. With `Mod` and
+- `Mod`: `ApplySource` gives every idle route (`SpawnerState` `WaitingForSpawn` or `WaitingForDespawn`,
+  `SpawnRange.Idle`) that isn't being started by the mod the blocked range, and every other route the game's range back. With `Mod` and
   `IntervalMinutes = 0` there are no caravans at all; the load log and `.cv auto` warn about it.
 
 ## Tracking and icons (`Tracker.Tick`)

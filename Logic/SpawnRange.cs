@@ -19,6 +19,11 @@ public static class SpawnRange
     public static bool IsZero(float x, float y) => x == 0f && y == 0f;
     public static bool IsStart(float x, float y) => y > 1000f;
 
+    // A route with no caravan out: waiting for a new squad, or standing at its last stop until the game removes
+    // what is left and returns it to the start (WaitingForDespawn). The second kind must be blocked too: a player
+    // coming near wakes it, the game resets it and would spawn its own squad before the next check.
+    public static bool Idle(string spawnerState) => spawnerState == "WaitingForSpawn" || spawnerState == "WaitingForDespawn";
+
     // Source: what to write into a route that isn't being started by the mod; null = leave it.
     // With Mod a route waiting for a new squad is blocked; any other route gets the game's range back
     // if it is blocked (or zero, which an earlier version could leave).

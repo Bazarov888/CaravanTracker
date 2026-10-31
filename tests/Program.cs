@@ -159,6 +159,11 @@ static class Program
             Eq(SpawnRange.NormalY, SpawnRange.SourceTarget(true, false, 0, SpawnRange.BlockedY));
             Eq<float?>(null, SpawnRange.SourceTarget(true, false, 0, 90));
         });
+        Test("Source = Mod blocks a route idle at its last stop too, not one with a caravan out", () =>
+        {
+            True(SpawnRange.Idle("WaitingForSpawn") && SpawnRange.Idle("WaitingForDespawn"), "idle");
+            True(!SpawnRange.Idle("Active"), "caravan out");
+        });
         Test("zero range is never left: blocked with Mod, opened otherwise", () =>
         {
             Eq(SpawnRange.BlockedY, SpawnRange.SourceTarget(true, true, 0, 0));

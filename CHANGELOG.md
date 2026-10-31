@@ -5,6 +5,7 @@
 - A route standing at its last stop is now woken before its squad may spawn, so the game first returns it to its first stop and the caravan sets out from there. Before, the squad appeared at the end of the route. If the route doesn't go back within 20 seconds, the squad spawns where it stands, as before, and the log says so.
 - Auto-start takes routes at their first stop and routes at their last stop as one group, and doesn't pick the route it started last while another one is free. Before, a route that had just finished stood at its first stop again and was picked over and over, while routes at their last stop waited.
 - A caravan in a fight keeps its map icon even when its animal is more than 30 m from the cart. Before, the icon vanished during the attack and the log said "cart left without its animal".
+- With `Source = Mod`, routes standing at their last stop are blocked too, not only routes waiting for a new squad. A player walking near such a route wakes it, the game resets it and could spawn its own caravan before the next check.
 - The log tells how far from where the route stood the squad appeared. For a route put back to the start (`ResetToStart`) it warns when the squad appeared where the route stood, i.e. the caravan first walks back to the first stop.
 
 ## 1.0.7

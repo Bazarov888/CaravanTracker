@@ -44,6 +44,8 @@ public static class RunLogic
     public static readonly TimeSpan AssemblyMax = TimeSpan.FromMinutes(4);
     public static readonly TimeSpan WakeMax = TimeSpan.FromSeconds(20);
     public const float WakeMoved = 5f;
+    // A squad's first unit within this distance of where the route stood appeared "in place".
+    public const float SamePlace = 20f;
 
     // A route at its last stop (WaitForDespawn) is woken first with spawning still off. Seen on the server:
     // spawning there at once puts the squad at the end of the route (31.10, MilitiaCotton), while a route the
