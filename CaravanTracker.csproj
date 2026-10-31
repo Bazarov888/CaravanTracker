@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>CaravanTracker</AssemblyName>
+    <RootNamespace>CaravanTracker</RootNamespace>
+    <Version>1.0.4</Version>
+    <Description>Caravans on the map, chat announcements and automatic caravan starts by act for V Rising servers.</Description>
+    <Authors>Bazarov</Authors>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <NuGetAudit>false</NuGetAudit>
+    <RestoreSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json</RestoreSources>
+  </PropertyGroup>
+
+  <!-- Default build: game, BepInEx and VCF reference assemblies come from NuGet, so the mod builds anywhere:
+         dotnet build -c Release -->
+  <ItemGroup Condition="'$(BepDir)' == ''">
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.733" PrivateAssets="all" />
+    <PackageReference Include="VampireReferenceAssemblies" Version="1.1.12-r99041-b2" PrivateAssets="all" />
+    <PackageReference Include="VRising.VampireCommandFramework" Version="0.10.4" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Alternative: build against the BepInEx folder of an installed server, no NuGet needed:
+         dotnet build -c Release -p:BepDir=/path/to/server/BepInEx -->
+  <ItemGroup Condition="'$(BepDir)' != ''">
+    <Reference Include="$(BepDir)/core/BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(BepDir)/core/BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(BepDir)/core/BepInEx.Unity.Common.dll" Private="false" Condition="Exists('$(BepDir)/core/BepInEx.Unity.Common.dll')" />
+    <Reference Include="$(BepDir)/core/0Harmony.dll" Private="false" />
+    <Reference Include="$(BepDir)/core/Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(BepDir)/core/Il2CppInterop.Common.dll" Private="false" Condition="Exists('$(BepDir)/core/Il2CppInterop.Common.dll')" />
+    <Reference Include="$(BepDir)/interop/*.dll" Private="false" />
+    <Reference Include="$(BepDir)/plugins/**/VampireCommandFramework.dll" Private="false" />
+  </ItemGroup>
+
+  <!-- Release build also makes the Thunderstore package: dist/CaravanTracker-<version>.zip -->
+  <Target Name="ThunderstorePackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <PkgDir>$(MSBuildProjectDirectory)/dist/pkg</PkgDir>
+    </PropertyGroup>
+    <RemoveDir Directories="$(PkgDir)" />
+    <Copy SourceFiles="manifest.json;README.md;CHANGELOG.md;icon.png;LICENSE;$(TargetPath)" DestinationFolder="$(PkgDir)" />
+    <ZipDirectory SourceDirectory="$(PkgDir)" DestinationFile="$(MSBuildProjectDirectory)/dist/CaravanTracker-$(Version).zip" Overwrite="true" />
+    <RemoveDir Directories="$(PkgDir)" />
+  </Target>
+
+</Project>

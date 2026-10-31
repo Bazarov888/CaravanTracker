@@ -1,0 +1,274 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Il2CppInterop.Runtime;
+using ProjectM;
+using ProjectM.Network;
+using Stunlock.Core;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Transforms;
+
+namespace CaravanTracker;
+
+public enum Kind { None, Container, Cart, Horse }
+
+// Finding caravans in the world. A caravan is a cart (CHAR_Carriage_*) pulled by a horse
+// (CHAR_CarriageHorse_*); after the cart is destroyed its loot stays in a container (TM_CarriageContainer_*).
+// The part after the prefix is the route key, e.g. MilitiaIron.
+static class Caravans
+{
+    const string ContainerPrefix = "TM_CarriageContainer_";
+    const string HorsePrefix = "CHAR_CarriageHorse_";
+    const string CartPrefix = "CHAR_Carriage_";
+
+    // Cache: prefab id -> kind and route key. The name is looked up once per prefab.
+    static readonly Dictionary<int, (Kind Kind, string Route)> Kinds = new();
+
+    // Frozen: the cart is frozen (no players nearby), Pos is where its patrol stands.
+    // Status: state of the cart's patrol from the game (e.g. Moving, WaitForDespawn), carts only.
+    // Patrol and Stops: the cart's patrol and how far along its path it is (carts only).
+    // Orphan: a cart on the map that no animal pulls any more (its animal is gone, frozen elsewhere or far away).
+    public record Found(Kind Kind, string Route, Entity Entity, float3 Pos, bool Empty, bool Frozen, string Status,
+                        Entity Patrol, Routes.Progress Stops, bool Orphan);
+    // Icon: whether to put an icon on the map. Frozen at the end of the route get none: they vanish when approached.
+    // State: short English state for the server log.
+    public record Caravan(string Route, Entity Target, float3 Pos, string Note, bool Frozen, bool Icon,
+                          Entity Patrol, Routes.Progress Stops, string State);
+
+    public static World ServerWorld()
+    {
+        if (World.s_AllWorlds == null) return null;
+        foreach (var w in World.s_AllWorlds)
+            if (w.Name == "Server" && w.IsCreated) return w;
+        return null;
+    }
+
+    public static PrefabCollectionSystem Prefabs(World world)
+    {
+        var p = world.GetExistingSystemManaged<PrefabCollectionSystem>();
+        return p != null && p.GameDataInitialized ? p : null;
+    }
+
+    public static bool Has<T>(EntityManager em, Entity e) => em.HasComponent(e, ComponentType.ReadOnly(Il2CppType.Of<T>()));
+
+    public static (Kind Kind, string Route) Classify(PrefabCollectionSystem prefabs, PrefabGUID guid)
+    {
+        if (Kinds.TryGetValue(guid.GuidHash, out var known)) return known;
+        (Kind, string) result = (Kind.None, null);
+        if (prefabs._PrefabLookupMap.TryGetName(guid, out string name) && !string.IsNullOrEmpty(name))
+        {
+            if (name.StartsWith(ContainerPrefix, StringComparison.Ordinal)) result = (Kind.Container, name.Substring(ContainerPrefix.Length));
+            else if (name.StartsWith(HorsePrefix, StringComparison.Ordinal)) result = (Kind.Horse, name.Substring(HorsePrefix.Length));
+            else if (name.StartsWith(CartPrefix, StringComparison.Ordinal)) result = (Kind.Cart, name.Substring(CartPrefix.Length));
+        }
+        Kinds[guid.GuidHash] = result;
+        return result;
+    }
+
+    public static bool IsCaravanEntity(EntityManager em, PrefabCollectionSystem prefabs, Entity e) =>
+        Has<PrefabGUID>(em, e) && Classify(prefabs, em.GetComponentData<PrefabGUID>(e)).Kind != Kind.None;
+
+    // A container is empty if none of its inventory slots holds an item.
+    // If the inventory can't be read, the container counts as full, so the caravan isn't lost.
+    internal static bool IsEmpty(EntityManager em, Entity container)
+    {
+        if (!InventoryUtilities.TryGetInventoryEntity(em, container, out Entity inventory)) return false;
+        if (!em.HasBuffer<InventoryBuffer>(inventory)) return false;
+        var slots = em.GetBuffer<InventoryBuffer>(inventory);
+        for (int i = 0; i < slots.Length; i++)
+            if (slots[i].ItemType.GuidHash != 0 && slots[i].Amount > 0) return false;
+        return true;
+    }
+
+    // Goes through networked objects that have the marker component (or all networked objects if there is no marker).
+    static void Collect(EntityManager em, PrefabCollectionSystem prefabs, ComponentType? marker,
+                        List<Found> found, HashSet<(int, int)> seen, ref int scanned)
+    {
+        var builder = new EntityQueryBuilder(Allocator.Temp)
+            .AddAll(ComponentType.ReadOnly(Il2CppType.Of<PrefabGUID>()))
+            .AddAll(ComponentType.ReadOnly(Il2CppType.Of<NetworkId>()));
+        if (marker.HasValue) builder = builder.AddAll(marker.Value);
+        builder = builder.WithOptions(EntityQueryOptions.IncludeDisabled);
+        var query = em.CreateEntityQuery(ref builder);
+        builder.Dispose();
+        var entities = query.ToEntityArray(Allocator.Temp);
+        try
+        {
+            foreach (var e in entities)
+            {
+                scanned++;
+                var info = Classify(prefabs, em.GetComponentData<PrefabGUID>(e));
+                if (info.Kind == Kind.None || !seen.Add((e.Index, e.Version))) continue;
+                bool empty = info.Kind == Kind.Container && IsEmpty(em, e);
+                var pos = PositionOf(em, e);
+                bool frozen = false;
+                string status = null;
+                Entity patrol = Entity.Null;
+                Routes.Progress stops = null;
+                if (info.Kind == Kind.Cart && TryGetPatrol(em, e, out patrol))
+                {
+                    stops = Routes.StopsOf(em, patrol);
+                    status = Routes.MoveStatus(em, patrol);
+                    // With no players nearby the game freezes the caravan and moves the cart to (10000, 10000).
+                    // Its real place is where the patrol stands that the horse follows.
+                    var patrolPos = PositionOf(em, patrol);
+                    if (!OnMap(pos) && OnMap(patrolPos))
+                    {
+                        pos = patrolPos;
+                        frozen = true;
+                    }
+                }
+                bool orphan = info.Kind == Kind.Cart && !frozen && OnMap(pos) && !Pulled(em, e, pos);
+                found.Add(new Found(info.Kind, info.Route, e, pos, empty, frozen, status, patrol, stops, orphan));
+            }
+        }
+        finally
+        {
+            entities.Dispose();
+            query.Dispose();
+        }
+    }
+
+    // Fast search: moving carts by their component, standing containers among objects with an inventory.
+    public static List<Found> FastScan(EntityManager em, PrefabCollectionSystem prefabs, out int scanned)
+    {
+        scanned = 0;
+        var found = new List<Found>();
+        var seen = new HashSet<(int, int)>();
+        Collect(em, prefabs, ComponentType.ReadOnly(Il2CppType.Of<ProjectM.Shared.Script_CarriageData>()), found, seen, ref scanned);
+        Collect(em, prefabs, ComponentType.ReadOnly(Il2CppType.Of<InventoryInstanceElement>()), found, seen, ref scanned);
+        return found;
+    }
+
+    // Full pass over all networked objects of the world, about 0.2 s. Safety net for the fast search.
+    public static List<Found> FullScan(EntityManager em, PrefabCollectionSystem prefabs, out int scanned)
+    {
+        scanned = 0;
+        var found = new List<Found>();
+        Collect(em, prefabs, null, found, new HashSet<(int, int)>(), ref scanned);
+        return found;
+    }
+
+    // Whether a cart on the map is still pulled: its animal exists, stands on the map and is close to it.
+    // A cart left behind (e.g. at the end of the route while its animal froze elsewhere) isn't a caravan.
+    static bool Pulled(EntityManager em, Entity cart, float3 cartPos)
+    {
+        if (!Has<ProjectM.Shared.Script_CarriageData>(em, cart)) return false;
+        var horse = em.GetComponentData<ProjectM.Shared.Script_CarriageData>(cart).Horse.GetEntityOnServer();
+        if (horse == Entity.Null || !em.Exists(horse)) return false;
+        var horsePos = PositionOf(em, horse);
+        return OnMap(horsePos) && Dist2(horsePos, cartPos) < 30f;
+    }
+
+    // A caravan is a container with loot or a cart on the map. Skipped: empty containers, carts at the last
+    // stop of their route (WaitForDespawn: the game is about to remove them), and carts no animal pulls.
+    // Which caravans get a map icon is set by IconOnLoot and IconOnFrozen.
+    public static List<Caravan> Build(List<Found> found)
+    {
+        var containers = found.FindAll(f => f.Kind == Kind.Container && !f.Empty && OnMap(f.Pos));
+        var carts = found.FindAll(f => f.Kind == Kind.Cart && OnMap(f.Pos));
+        var result = new List<Caravan>();
+        bool lootIcon = Settings.IconOnLoot.Value;
+        bool frozenIcon = Settings.IconOnFrozen.Value;
+        foreach (var c in containers)
+            result.Add(new Caravan(c.Route, c.Entity, c.Pos, L.T("note.loot"), false, lootIcon, Entity.Null, null, "loot"));
+        foreach (var cart in carts)
+        {
+            if (containers.Exists(c => c.Route == cart.Route && Dist2(c.Pos, cart.Pos) < 15)) continue;
+            if (cart.Status == "WaitForDespawn" || cart.Orphan) continue;
+            string stops = Routes.StopText(cart.Stops);
+            string stopNote = stops.Length > 0 ? ", " + stops : "";
+            string stopLog = cart.Stops != null ? $" stop {cart.Stops.Log}" : "";
+            if (!cart.Frozen)
+                result.Add(new Caravan(cart.Route, cart.Entity, cart.Pos, L.T("note.moving", stopNote), false, true,
+                                       cart.Patrol, cart.Stops, "moving" + stopLog));
+            else
+                result.Add(new Caravan(cart.Route, cart.Entity, cart.Pos, L.T("note.frozen", cart.Status, stopNote), true, frozenIcon,
+                                       cart.Patrol, cart.Stops, $"frozen ({cart.Status})" + stopLog));
+        }
+        return result;
+    }
+
+    // Reads a game component by type name when its namespace isn't known in advance:
+    // the type is looked up at runtime and the data is copied from memory.
+    static readonly Dictionary<string, (Type Type, ComponentType Ct)> RawTypes = new();
+
+    internal static unsafe object ReadRaw(EntityManager em, Entity e, string typeName)
+    {
+        if (!RawTypes.TryGetValue(typeName, out var info))
+        {
+            var t = GameTypes.Find(typeName);
+            info = (t, t == null ? default : ComponentType.ReadOnly(Il2CppType.From(t)));
+            RawTypes[typeName] = info;
+            if (t == null) Plugin.Logger.LogWarning($"CaravanTracker: game type {typeName} not found");
+        }
+        if (info.Type == null || e == Entity.Null || !em.Exists(e) || !em.HasComponent(e, info.Ct)) return null;
+        void* ptr = em.GetComponentDataRawRO(e, info.Ct.TypeIndex);
+        return ptr == null ? null : Marshal.PtrToStructure(new IntPtr(ptr), info.Type);
+    }
+
+    internal static object Field(object boxed, string name) => boxed?.GetType().GetField(name)?.GetValue(boxed);
+
+    // Patrol of a caravan: cart -> its horse (Script_CarriageData.Horse) -> who spawned the horse (SpawnedBy).
+    internal static bool TryGetPatrol(EntityManager em, Entity cart, out Entity patrol)
+    {
+        patrol = Entity.Null;
+        if (!Has<ProjectM.Shared.Script_CarriageData>(em, cart)) return false;
+        var horse = em.GetComponentData<ProjectM.Shared.Script_CarriageData>(cart).Horse.GetEntityOnServer();
+        if (horse == Entity.Null || !em.Exists(horse) || !Has<SpawnedBy>(em, horse)) return false;
+        patrol = em.GetComponentData<SpawnedBy>(horse).Value;
+        return patrol != Entity.Null && em.Exists(patrol);
+    }
+
+    // The map of Vardoran is roughly -3200..3200 on x and z. Farther out the game parks spare carts.
+    public static bool OnMap(float3 p) => Math.Abs(p.x) <= 4000 && Math.Abs(p.z) <= 4000;
+
+    public static float3 PositionOf(EntityManager em, Entity entity)
+    {
+        if (Has<LocalToWorld>(em, entity)) return em.GetComponentData<LocalToWorld>(entity).Position;
+        if (Has<Translation>(em, entity)) return em.GetComponentData<Translation>(entity).Value;
+        return float3.zero;
+    }
+
+    public static float Dist2(float3 a, float3 b) => math.distance(new float2(a.x, a.z), new float2(b.x, b.z));
+
+    public static string Direction(float dx, float dz)
+    {
+        double angle = (Math.Atan2(dx, dz) * 180 / Math.PI + 360) % 360;
+        return L.T("dir." + ((int)Math.Round(angle / 45) % 8));
+    }
+}
+
+// Finds the C# wrapper of a game type by its short name when the namespace isn't known in advance.
+static class GameTypes
+{
+    static readonly Dictionary<string, Type> Cache = new();
+
+    public static Type Find(string simpleName)
+    {
+        if (Cache.TryGetValue(simpleName, out var cached)) return cached;
+        Type found = null, fallback = null;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            string asmName = asm.GetName().Name ?? "";
+            if (!asmName.StartsWith("ProjectM", StringComparison.Ordinal) && !asmName.StartsWith("Stunlock", StringComparison.Ordinal)) continue;
+            Type[] types;
+            try { types = asm.GetTypes(); }
+            catch (ReflectionTypeLoadException ex) { types = ex.Types; }
+            catch { continue; }
+            foreach (var t in types)
+            {
+                if (t == null || t.Name != simpleName || !t.IsValueType) continue;
+                if (t.Namespace != null && t.Namespace.StartsWith("ProjectM", StringComparison.Ordinal)) { found = t; break; }
+                fallback ??= t;
+            }
+            if (found != null) break;
+        }
+        found ??= fallback;
+        Cache[simpleName] = found;
+        return found;
+    }
+}
