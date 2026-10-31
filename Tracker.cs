@@ -106,7 +106,7 @@ static class Tracker
     static string _lastStats;
     public static string LastStats => _lastStats ?? L.T("stats.none");
     public static List<Caravans.Caravan> Current => _caravans;
-    static HashSet<(int, int)> _onMapCarts = new();
+    static HashSet<(int, int)> _announced = new();
     static bool _primed;
 
     // Every time a fast search. A full pass runs on schedule or on command;
@@ -159,26 +159,28 @@ static class Tracker
             catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker: repair of routes failed: {e}"); }
         }
 
-        // Announcement: a cart came to life (a player came near and it moved off, or the mod started it)
-        // while at the previous check it was still waiting. The first check after server start only
-        // remembers what is already moving.
-        var onMapCarts = new HashSet<(int, int)>();
+        // Announcement: once per cart, when it is first seen moving on the map (the game spawned it next to
+        // a player, or the mod started it). A cart that froze and woke up again, or was hidden for a moment
+        // as left without its animal, isn't announced again. A cart parked off the map is forgotten, so if
+        // the game uses it for a new caravan, that one is announced. The first check after server start
+        // only remembers the carts already on the map.
+        var announced = new HashSet<(int, int)>();
         foreach (var f in found)
         {
-            if (f.Kind != Kind.Cart || f.Frozen || f.Orphan || !Caravans.OnMap(f.Pos)) continue;
+            if (f.Kind != Kind.Cart || !Caravans.OnMap(f.Pos)) continue;
             var key = (f.Entity.Index, f.Entity.Version);
-            if (!_primed || _onMapCarts.Contains(key)) { onMapCarts.Add(key); continue; }
+            if (!_primed || _announced.Contains(key)) { announced.Add(key); continue; }
+            if (f.Frozen || f.Orphan) continue;
             // A cart at the last stop of its route isn't setting out: the game is about to remove it.
-            // It isn't remembered either, so it is announced if it really leaves later.
-            if (f.Patrol != Entity.Null && Routes.MoveStatus(em, f.Patrol) == "WaitForDespawn") continue;
-            onMapCarts.Add(key);
+            if (f.Status == "WaitForDespawn") continue;
+            announced.Add(key);
             bool byMod = f.Patrol != Entity.Null && Starter.IsRunning(f.Patrol);
             string stops = f.Stops != null ? $", stop {f.Stops.Log}" : "";
             Plugin.Logger.LogInfo($"CaravanTracker: caravan {f.Route} set out at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}){stops}{(byMod ? ", started by the mod" : "")}");
             if (Settings.Announce.Value && (byMod || Settings.AnnounceVanilla.Value))
                 Announcer.CaravanStarted(em, prefabs, f.Route, f.Entity, f.Pos);
         }
-        _onMapCarts = onMapCarts;
+        _announced = announced;
         _primed = true;
 
         bool proxyMode = Settings.ProxyMode;

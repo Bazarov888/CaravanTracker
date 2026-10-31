@@ -11,7 +11,7 @@ public static class MyPluginInfo
 {
     public const string PLUGIN_GUID = "Bazarov.CaravanTracker";
     public const string PLUGIN_NAME = "CaravanTracker";
-    public const string PLUGIN_VERSION = "1.0.4";
+    public const string PLUGIN_VERSION = "1.0.5";
 }
 
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]

@@ -4,7 +4,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>CaravanTracker</AssemblyName>
     <RootNamespace>CaravanTracker</RootNamespace>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <Description>Caravans on the map, chat announcements and automatic caravan starts by act for V Rising servers.</Description>
     <Authors>Bazarov</Authors>
     <LangVersion>latest</LangVersion>

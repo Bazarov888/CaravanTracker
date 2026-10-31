@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.5
+
+- Fixed a started caravan setting out without guards: the start settings now stay until the whole squad has appeared, not only the animal with the cart. With `Source = Mod` the squad on the road also gets the game's normal spawn range back instead of the blocked one.
+- The server log tells how many units the squad of a started caravan has once it is assembled.
+- With `Source = Mod`, a route whose start has ended is blocked at once, so the game can't spawn its own caravan there before the next check.
+- A caravan is announced once: a cart that froze and woke up again, or was hidden for a moment, is no longer announced again.
+- After a crash in the middle of a start, units and carts of the route get their freezing without players back on the next server start.
+- An error in one started caravan no longer stops the others; a start that fails 10 times in a row is given up.
+
 ## 1.0.4
 
 - Stops are shown the way players count them: "stop 1 of 7" at the start, "stop 7 of 7" at the last one.

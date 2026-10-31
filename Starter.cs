@@ -222,6 +222,9 @@ static class Starter
         public bool HadCart;
         public bool CartGone;
         public bool Reset;
+        public DateTime SpawnedAt;
+        public DateTime LastGrow;
+        public int Errors;
     }
 
     static DateTime _nextUpdate;
@@ -392,13 +395,21 @@ static class Starter
         }
     }
 
+    // Gives the route its own spawner settings back. With Source = Mod the saved player range is the
+    // blocked one; a squad on the road gets the game's normal range instead, and the block comes back
+    // once the route waits for a new caravan again (ApplySource).
     static void Restore(EntityManager em, Run run)
     {
         if (run.Restored || !em.Exists(run.Patrol)) return;
         var sp = em.GetComponentData<UnitCompositionSpawner>(run.Patrol);
         object boxed = sp;
         foreach (var kv in run.Saved)
-            if (kv.Value != null) SetField(boxed, kv.Key, kv.Value);
+        {
+            object value = kv.Value;
+            if (kv.Key == "PlayerRange" && value is float2 range && (IsBlockedRange(range) || (range.x == 0f && range.y == 0f)))
+                value = NormalRange;
+            if (value != null) SetField(boxed, kv.Key, value);
+        }
         ResetField(boxed, "RespawnTime");
         em.SetComponentData(run.Patrol, (UnitCompositionSpawner)boxed);
         run.Restored = true;
@@ -427,7 +438,8 @@ static class Starter
     }
 
     // After a crash or restart in the middle of a start, a route may keep the start settings: no freeze
-    // without players, zero timers, endless player range. Such routes get the game's normal values back.
+    // without players, zero timers, endless player range. Its units and carts may stay without the freeze
+    // too. Such routes and units get the game's normal values back.
     public static int RepairLeftovers(EntityManager em, PrefabCollectionSystem prefabs)
     {
         int repaired = 0;
@@ -435,6 +447,17 @@ static class Starter
         foreach (var r in Routes.All(em, prefabs))
         {
             if (IsRunning(r.Patrol) || !em.Exists(r.Patrol)) continue;
+            if (tag.HasValue)
+            {
+                var units = Routes.ActiveUnits(em, r.Patrol);
+                var all = new List<Entity>(units);
+                if (units.Count > 0) all.AddRange(Routes.CartsOf(em, units));
+                int fixedUnits = 0;
+                foreach (var e in all)
+                    if (!em.HasComponent(e, tag.Value)) { AddTag(em, e, "DisableWhenNoPlayersInRange"); fixedUnits++; }
+                if (fixedUnits > 0)
+                    Plugin.Logger.LogInfo($"CaravanTracker: route {r.Key}: {fixedUnits} units and carts left without freezing, restored");
+            }
             var sp = em.GetComponentData<UnitCompositionSpawner>(r.Patrol);
             object boxed = sp;
             bool farRange = Caravans.Field(boxed, "PlayerRange") is float2 range && range.y > 1000f;
@@ -470,6 +493,19 @@ static class Starter
     static readonly HashSet<(int, int)> WarnedRoutes = new();
 
     static bool IsBlockedRange(float2 r) => r.y > 0f && r.y < 0.01f;
+
+    // Source = Mod: right after a start ends, a route that waits for a new caravan is blocked at once,
+    // not at the next check, so that the game can't spawn its own caravan there in between.
+    static void BlockIfWaiting(EntityManager em, Entity patrol)
+    {
+        if (!Settings.ModOnly || !em.Exists(patrol)) return;
+        var sp = em.GetComponentData<UnitCompositionSpawner>(patrol);
+        if (sp.SpawnerState.ToString() != "WaitingForSpawn") return;
+        object boxed = sp;
+        SetField(boxed, "PlayerRange", BlockedRange);
+        em.SetComponentData(patrol, (UnitCompositionSpawner)boxed);
+        BlockedRoutes.Add(Key(patrol));
+    }
 
     public static int ApplySource(EntityManager em, PrefabCollectionSystem prefabs)
     {
@@ -507,6 +543,7 @@ static class Starter
         int back = 0;
         if (em.Exists(run.Patrol))
         {
+            BlockIfWaiting(em, run.Patrol);
             AddTag(em, run.Patrol, "DisableWhenNoPlayersInRange");
             var units = Routes.ActiveUnits(em, run.Patrol);
             var rest = new List<Entity>(units);
@@ -561,7 +598,32 @@ static class Starter
         for (int i = Runs.Count - 1; i >= 0; i--)
         {
             var run = Runs[i];
-            if (!em.Exists(run.Patrol)) { Runs.RemoveAt(i); continue; }
+            try
+            {
+                if (UpdateRun(em, run, now, spawnTimeout, maxRun, maxSquad)) Runs.RemoveAt(i);
+                run.Errors = 0;
+            }
+            catch (Exception e)
+            {
+                // One broken start must not stop the others. After 10 errors in a row it is given up.
+                run.Errors++;
+                if (run.Errors == 1 || run.Errors == 10)
+                    Plugin.Logger.LogError($"CaravanTracker start: route {run.Route}, error {run.Errors}: {e}");
+                if (run.Errors >= 10)
+                {
+                    try { Finish(em, run, "given up after 10 errors in a row"); }
+                    catch (Exception e2) { Plugin.Logger.LogError($"CaravanTracker start: route {run.Route} can't be finished: {e2.Message}"); }
+                    Runs.RemoveAt(i);
+                }
+            }
+        }
+    }
+
+    // One second of one start. Returns true when the start is over and must be removed.
+    static bool UpdateRun(EntityManager em, Run run, DateTime now, int spawnTimeout, int maxRun, int maxSquad)
+    {
+        {
+            if (!em.Exists(run.Patrol)) return true;
 
             var patrolPos = Caravans.PositionOf(em, run.Patrol);
             var units = Routes.ActiveUnits(em, run.Patrol);
@@ -579,7 +641,8 @@ static class Starter
             if (!run.Spawned && units.Count > 0 && !atEnd)
             {
                 run.Spawned = true;
-                Restore(em, run);
+                run.SpawnedAt = now;
+                run.LastGrow = now;
                 Chat.Send(em, run.User, L.T("start.spawned", name));
                 // Where the squad appeared, to see that a route put back to the start really sets out from there.
                 var p = Routes.StopsOf(em, run.Patrol);
@@ -610,7 +673,11 @@ static class Starter
                         units.RemoveAt(k);
                         if (run.LostAny) blocked++; else over++;
                     }
-                    else run.Known.Add(key);
+                    else
+                    {
+                        run.Known.Add(key);
+                        run.LastGrow = now;
+                    }
                 }
                 if (blocked > 0)
                 {
@@ -621,6 +688,15 @@ static class Starter
                 {
                     run.OverLimit += over;
                     Plugin.Logger.LogWarning($"CaravanTracker start: patrol {run.Patrol.Index}:{run.Patrol.Version} route {run.Route}: squad over MaxSquadSize {maxSquad}, removed {over} units (total {run.OverLimit})");
+                }
+
+                // The game puts the squad out in parts: the animal with the cart first, the guards up to a minute
+                // later. The start settings stay until the squad has stopped growing for 90 seconds (at most
+                // 4 minutes after the first unit), so the rest of the squad comes for sure.
+                if (!run.Restored && ((now - run.LastGrow).TotalSeconds >= 90 || (now - run.SpawnedAt).TotalMinutes >= 4))
+                {
+                    Restore(em, run);
+                    Plugin.Logger.LogInfo($"CaravanTracker start: patrol {run.Patrol.Index}:{run.Patrol.Version} route {run.Route}: squad assembled, {units.Count} units");
                 }
             }
 
@@ -651,19 +727,20 @@ static class Starter
                 Finish(em, run, $"no units after {spawnTimeout} minutes; auto-start skips this route for an hour");
                 FailedAt[run.Route] = now;
                 Chat.Send(em, run.User, L.T("start.failed", name, spawnTimeout));
-                Runs.RemoveAt(i);
+                return true;
             }
-            else if (run.Spawned && units.Count == 0)
+            if (run.Spawned && units.Count == 0)
             {
                 Finish(em, run, "route completed or caravan destroyed");
                 Chat.Send(em, run.User, L.T("start.done", name));
-                Runs.RemoveAt(i);
+                return true;
             }
-            else if (age.TotalMinutes > maxRun)
+            if (age.TotalMinutes > maxRun)
             {
                 Finish(em, run, $"timeout {maxRun} minutes");
-                Runs.RemoveAt(i);
+                return true;
             }
+            return false;
         }
     }
 }
