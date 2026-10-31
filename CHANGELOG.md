@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.8
+
+- A route standing at its last stop is now woken before its squad may spawn, so the game first returns it to its first stop and the caravan sets out from there. Before, the squad appeared at the end of the route. If the route doesn't go back within 20 seconds, the squad spawns where it stands, as before, and the log says so.
+- Auto-start takes routes at their first stop and routes at their last stop as one group, and doesn't pick the route it started last while another one is free. Before, a route that had just finished stood at its first stop again and was picked over and over, while routes at their last stop waited.
+- A caravan in a fight keeps its map icon even when its animal is more than 30 m from the cart. Before, the icon vanished during the attack and the log said "cart left without its animal".
+- With `Source = Mod`, routes standing at their last stop are blocked too, not only routes waiting for a new squad. A player walking near such a route wakes it, the game resets it and could spawn its own caravan before the next check.
+- The log tells how far from where the route stood the squad appeared.
+- Each player picks their own language with `.cv lang en` or `.cv lang ru` (no longer an admin command that switched it for everyone). Announcements, replies and start messages come in each player's language; `Language` in the config is the default for players who haven't picked one.
+- A player who has just come into the world gets two lines, in English and Russian (or in their own language if they picked one): what the mod does and how to pick the language. Setting `Chat.Welcome`, on by default; `Chat.WelcomeEn` / `Chat.WelcomeRu` replace the text with the server's own.
+- Long replies (`.cv ss` with several started caravans, `.cv auto`, `.cv a`) are split into several lines. In Russian they could exceed the 512-byte chat limit and get cut or not arrive at all. For a route put back to the start (`ResetToStart`) it warns when the squad appeared where the route stood, i.e. the caravan first walks back to the first stop.
+
+## 1.0.7
+
+- Every decision of the mod (is a route free, which route to start, what to do with a started squad, why a caravan disappeared, what spawn range a route gets, what is announced) now lives in one place without game calls, and is covered by tests built from cases seen on the server. CI runs them before every build.
+- The log no longer says "cart destroyed" about a caravan that reached the end of its route between two checks.
+- Every log line of the mod starts with the server time. Start lines tell how many seconds the squad took to appear and to assemble, and how many minutes the run lasted.
+- An auto-start log line tells which free routes there were (at the start, at the end, mid-way) and from which group the route was picked.
+- `.cv ss` no longer says "cart destroyed" twice.
+
+## 1.0.6
+
+- `.cv cleanup` (admin): run it before removing the mod. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next restart the mod then changes nothing in the world.
+- With `Source = Mod`, routes are checked for blocking every 5 seconds instead of every `CheckSeconds`, so the game has less time to spawn its own caravan next to a player.
+- With `Source = Mod` and `IntervalMinutes = 0` no caravans appear at all; the server log at load and `.cv auto` now say so.
+- New setting `RouteCommandsForAll` (section Chat, on by default): `false` makes `.cv r` and `.cv rm` admin-only, since they show where every route is.
+- Map icons another mod puts on a caravan are no longer removed; the mod removes only icons of the kinds it uses.
+- The version is written only in `CaravanTracker.csproj`; `MyPluginInfo` and the Thunderstore `manifest.json` are generated from it.
+- `tools/deploy.sh` can't break when `git pull` updates the script itself, and runs a pinned `alpine/git` image.
+- CI uses current versions of the GitHub actions.
+- ARCHITECTURE.md describes how the mod works inside, for reviewers.
+
 ## 1.0.5
 
 - Fixed a started caravan setting out without guards: the start settings now stay until the whole squad has appeared, not only the animal with the cart. With `Source = Mod` the squad on the road also gets the game's normal spawn range back instead of the blocked one.

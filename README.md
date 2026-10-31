@@ -8,7 +8,7 @@ Players don't need to install anything.
 
 - **Caravans on the map.** Every caravan on the road, every caravan frozen mid-route and every loot container left after a robbed caravan gets a map icon. The icon is visible to all players on the whole map, without discovering the area first.
 - **Announcements.** When a caravan sets out, every online player gets two chat lines. The first one names the caravan and its act, the second one gives the distance and direction from that player and the `.cv m <number>` command that puts a map marker on it.
-- **Auto-start by act.** In vanilla a caravan only spawns when a player happens to be near its route. The mod starts caravans itself: in every act where players are online, at most one new caravan per interval, within the per-act and server limits. Routes standing at the start of their path go first, so a caravan gets the whole way. Nobody online means nothing starts.
+- **Auto-start by act.** In vanilla a caravan only spawns when a player happens to be near its route. The mod starts caravans itself: in every act where players are online, at most one new caravan per interval, within the per-act and server limits. Routes standing at the start or at the end of their path go first, both set out from the first stop, so a caravan gets the whole way; the route started last is skipped while another one is free. Nobody online means nothing starts.
 - **Commands** to list caravans, mark the nearest one, see all routes with their act, and start a caravan on a chosen route.
 
 ## How acts work
@@ -30,6 +30,9 @@ For everyone:
 | `.cv r` | All routes with level, act and state |
 | `.cv a` | Your act and the routes of that act |
 | `.cv rm <number>` | Map marker on the point of a route from `.cv r` |
+| `.cv lang <en or ru>` | Your language of the mod's messages; other players keep theirs |
+
+`.cv r` and `.cv rm` show where every route is. With `RouteCommandsForAll = false` they are for admins only.
 
 For admins:
 
@@ -44,8 +47,8 @@ For admins:
 | `.cv icon <name or number>` | Map icon: `merchant`, `unknown`, `vblood` or a number from `.cv icons` |
 | `.cv icons [filter] [page]` | Map icons of the game with their numbers |
 | `.cv mode <direct or proxy>` | Where the icon hangs: on the caravan or on a separate marker |
-| `.cv lang <en or ru>` | Language of chat messages |
 | `.cv stats`, `.cv refresh` | Results of the last check, or a full check right now |
+| `.cv cleanup` | Before removing the mod: give routes the game's own settings back and remove the mod's icons (see Uninstalling) |
 
 `.cv` is short for `.caravan`.
 
@@ -55,7 +58,7 @@ For admins:
 
 | Section | Setting | Default | Meaning |
 |---|---|---|---|
-| General | Language | `en` | `en` or `ru` |
+| General | Language | `en` | `en` or `ru`: default for players who haven't picked their own with `.cv lang` |
 | Map | Icon | `merchant` | `merchant`, `unknown`, `vblood` or a PrefabGUID number |
 | Map | GlobalIcons | `true` | Icons visible to everyone on the whole map |
 | Map | IconMode | `direct` | `direct` or `proxy` |
@@ -65,13 +68,16 @@ For admins:
 | Chat | AnnounceTo | `All` | `All`, `SameAct` (players of the caravan's act) or `Nearby` |
 | Chat | AnnounceRadius | `1500` | Meters for `Nearby` |
 | Chat | AnnounceVanilla | `true` | Also announce caravans the game spawned by itself; `false` = only the mod's |
+| Chat | RouteCommandsForAll | `true` | `.cv r` and `.cv rm` for every player; `false` = admins only |
+| Chat | Welcome | `true` | Two lines to a player who has just come into the world: what the mod does and how to pick the language |
+| Chat | WelcomeEn, WelcomeRu | empty | Your own welcome lines instead of the mod's; color tags work, about 450 bytes at most (a Russian letter is 2 bytes) |
 | Chat | TitleColor, TextColor, CommandColor | gold, white, green | Announcement colors |
 | AutoStart | Source | `Both` | `Mod` = only the mod starts caravans, the game no longer spawns them near players; `Game` = only the game, auto-start off; `Both` |
-| AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off |
+| AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off. With `Source = Mod` and `0` there are no caravans at all; the log warns about it |
 | AutoStart | Scope | `AllOnlineActs` | `AllOnlineActs` or `Leader` (only the most advanced player's act) |
 | AutoStart | MaxPerAct | `2` | Caravans started by the mod on the road at once in one act |
 | AutoStart | MaxTotal | `6` | The same for the whole server |
-| AutoStart | RoutePick | `Random` | `Random` or `Rotate` (the route started longest ago) |
+| AutoStart | RoutePick | `Random` | `Random` (any free route but the one started last) or `Rotate` (the route started longest ago) |
 | AutoStart | ExcludedRoutes | empty | Routes auto-start never uses, e.g. `BanditPrisoners,ChurchLegion` |
 | AutoStart | RouteActs | empty | Manual acts, e.g. `MilitiaIron=2,ChuchSilver=4` |
 | Start | SpawnTimeoutMinutes | `5` | How long to wait for a started squad to appear |
@@ -98,6 +104,15 @@ With r2modman or Thunderstore Mod Manager: install CaravanTracker, the dependenc
 
 Manually: put `CaravanTracker.dll` into `BepInEx/plugins/` on the server. Needs [BepInExPack V Rising](https://thunderstore.io/c/v-rising/p/BepInEx/BepInExPack_V_Rising/) and [VampireCommandFramework](https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/).
 
+## Uninstalling
+
+The mod changes some route settings in the world while it runs: with `Source = Mod` it blocks the game's own spawning, a started caravan gets start settings for a while, and the icons it creates live in the world. The server save can keep these. Before removing the mod:
+
+1. Run `.cv cleanup` in chat as admin. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next server restart the mod then changes nothing.
+2. Stop the server, delete `BepInEx/plugins/CaravanTracker`, start the server.
+
+Without the cleanup, routes blocked by `Source = Mod` would stay without caravans from the game.
+
 ## Building
 
 ```
@@ -106,7 +121,11 @@ dotnet build -c Release
 
 Reference assemblies come from NuGet (nuget.org and nuget.bepinex.dev). To build against an installed server instead: `dotnet build -c Release -p:BepDir=/path/to/server/BepInEx`.
 
-A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. When releasing a new version, change the version in three places: `CaravanTracker.csproj`, `manifest.json` and `MyPluginInfo` in `Plugin.cs`.
+Tests of the decision logic need only the .NET 8 SDK, no game files: `dotnet run --project tests`.
+
+A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. The version is written only in `CaravanTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
+
+How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Every push is built by GitHub Actions; the package is attached to the run as an artifact.
 
@@ -125,12 +144,14 @@ License: MIT.
 
 Серверный мод для V Rising. Караваны видны на карте всем игрокам, при выходе каравана в чат приходит анонс с расстоянием и направлением, а мод сам запускает караваны в актах, где есть игроки онлайн. Игрокам ничего ставить не нужно.
 
-Русский язык сообщений включается в конфиге (`Language = ru`) или командой `.cv lang ru`.
+Язык у каждого игрока свой: `.cv lang ru` или `.cv lang en`. Кто не выбрал, получает язык из конфига (`Language`). Новому игроку при входе приходят две строки, на английском и русском: что делает мод и как выбрать язык.
 
-Автозапуск: в каждом акте, где есть игрок онлайн, новый караван выходит не чаще раза в `IntervalMinutes` минут, пока в акте едет меньше `MaxPerAct`, а на сервере меньше `MaxTotal` караванов мода. Сначала берутся маршруты, которые стоят в начале пути. Акт игрока считается по выпитым V Blood, акт маршрута по уровню охраны. Проверить привязку маршрутов можно командой `.cv r`, поправить вручную через `RouteActs`, убрать маршрут из автозапуска через `ExcludedRoutes`.
+Автозапуск: в каждом акте, где есть игрок онлайн, новый караван выходит не чаще раза в `IntervalMinutes` минут, пока в акте едет меньше `MaxPerAct`, а на сервере меньше `MaxTotal` караванов мода. Сначала берутся маршруты, которые стоят в начале или в конце пути, причём не тот, что мод запускал последним. Акт игрока считается по выпитым V Blood, акт маршрута по уровню охраны. Проверить привязку маршрутов можно командой `.cv r`, поправить вручную через `RouteActs`, убрать маршрут из автозапуска через `ExcludedRoutes`.
 
 Кто запускает караваны, задаёт `Source` (или команда `.cv source`): `Mod` - только мод, сама игра больше не выпускает караван, когда игрок подходит к маршруту; `Game` - только игра, автозапуск выключен; `Both` - и мод, и игра.
 
 Кому приходит анонс, задаёт `AnnounceTo`: всем (`All`), игрокам того же акта (`SameAct`) или тем, кто ближе `AnnounceRadius` метров (`Nearby`).
 
 Команды и настройки описаны выше, в английской части.
+
+Перед удалением мода выполни в чате `.cv cleanup` (админ): мод вернёт маршрутам настройки игры и уберёт свои иконки. Потом останови сервер, удали папку `BepInEx/plugins/CaravanTracker` и запусти сервер. Без этого маршруты, заблокированные при `Source = Mod`, останутся без караванов игры.

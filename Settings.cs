@@ -22,6 +22,10 @@ static class Settings
     internal static ConfigEntry<string> AnnounceTo;
     internal static ConfigEntry<int> AnnounceRadius;
     internal static ConfigEntry<bool> AnnounceVanilla;
+    internal static ConfigEntry<bool> RouteCommandsForAll;
+    internal static ConfigEntry<bool> Welcome;
+    internal static ConfigEntry<string> WelcomeEn;
+    internal static ConfigEntry<string> WelcomeRu;
     internal static ConfigEntry<string> TitleColor;
     internal static ConfigEntry<string> TextColor;
     internal static ConfigEntry<string> CommandColor;
@@ -47,7 +51,7 @@ static class Settings
     internal static ConfigEntry<bool> EnableDiagnostics;
 
     // Ready-made map icons of the game. Any other icon can be set by its PrefabGUID number (.cv icons).
-    static readonly Dictionary<string, int> IconPresets = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, int> IconPresets = new(StringComparer.OrdinalIgnoreCase)
     {
         ["merchant"] = -360752412,  // MapIcon_POI_Discover_Merchant
         ["unknown"] = -1443504104,  // MapIcon_POI_Discover_Unknown
@@ -59,7 +63,7 @@ static class Settings
         _file = cfg;
 
         Language = cfg.Bind("General", "Language", "en",
-            new ConfigDescription("Language of chat messages. Change in game with .cv lang <en|ru>.",
+            new ConfigDescription("Default language of chat messages, for players who haven't picked their own with .cv lang <en|ru>.",
                 new AcceptableValueList<string>("en", "ru")));
 
         Icon = cfg.Bind("Map", "Icon", "merchant",
@@ -90,6 +94,14 @@ static class Settings
                 new AcceptableValueRange<int>(100, 10000)));
         AnnounceVanilla = cfg.Bind("Chat", "AnnounceVanilla", true,
             "Also announce caravans the game spawned by itself next to a player. false = only caravans started by the mod.");
+        Welcome = cfg.Bind("Chat", "Welcome", true,
+            "Two lines to a player who has just come into the world: what the mod does and how to pick the language (.cv lang).");
+        WelcomeEn = cfg.Bind("Chat", "WelcomeEn", "",
+            "Your own English welcome line instead of the mod's. Empty = the mod's. Color tags like <color=#7CFC7C>.cv l</color> work. At most about 450 bytes.");
+        WelcomeRu = cfg.Bind("Chat", "WelcomeRu", "",
+            "Your own Russian welcome line instead of the mod's. Empty = the mod's. A Russian letter takes 2 bytes, so at most about 200 letters.");
+        RouteCommandsForAll = cfg.Bind("Chat", "RouteCommandsForAll", true,
+            "Let every player use .cv routes and .cv rm, which show where all caravan routes are. false = admins only.");
         TitleColor = cfg.Bind("Chat", "TitleColor", "#FFC83C", "Color of the first announcement line (caravan name).");
         TextColor = cfg.Bind("Chat", "TextColor", "#FFFFFF", "Color of the second announcement line (distance and direction).");
         CommandColor = cfg.Bind("Chat", "CommandColor", "#7CFC7C", "Color of the command in the announcement.");

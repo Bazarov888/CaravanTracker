@@ -80,7 +80,7 @@ public class Commands
     [Command("routemark", shortHand: "rm", usage: "<number from .cv routes>", description: "Map marker on the point of a route from .cv routes")]
     public void RouteMark(ChatCommandContext ctx, int number)
     {
-        if (!Ready(ctx, out var em, out var prefabs)) return;
+        if (!RouteCommandAllowed(ctx) || !Ready(ctx, out var em, out var prefabs)) return;
         var routes = Routes.All(em, prefabs);
         if (number < 1 || number > routes.Count) { ctx.Reply(L.T("start.bad", number)); return; }
         var r = routes[number - 1];
@@ -90,10 +90,18 @@ public class Commands
         ctx.Reply(L.T("routemark.ok", L.Route(r.Key), Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z)));
     }
 
+    // .cv routes and .cv rm show where every route is; RouteCommandsForAll = false keeps them for admins.
+    static bool RouteCommandAllowed(ChatCommandContext ctx)
+    {
+        if (Settings.RouteCommandsForAll.Value || ctx.Event.User.IsAdmin) return true;
+        ctx.Reply(L.T("routes.adminonly"));
+        return false;
+    }
+
     [Command("routes", shortHand: "r", description: "All caravan routes with level, act and state")]
     public void RoutesList(ChatCommandContext ctx)
     {
-        if (!Ready(ctx, out var em, out var prefabs)) return;
+        if (!RouteCommandAllowed(ctx) || !Ready(ctx, out var em, out var prefabs)) return;
         var routes = Routes.All(em, prefabs);
         float3 me = Caravans.PositionOf(em, ctx.Event.SenderCharacterEntity);
         ctx.Reply(L.T("routes.head", routes.Count));
@@ -101,11 +109,10 @@ public class Commands
         {
             var r = routes[i];
             var pos = Caravans.PositionOf(em, r.Patrol);
-            int units = Routes.ActiveUnits(em, r.Patrol).Count;
             var act = Acts.OfRoute(em, prefabs, r);
             string stops = Routes.StopText(Routes.StopsOf(em, r.Patrol));
             ctx.Reply(L.T("routes.item", i + 1, L.Route(r.Key), r.Key, act.Level, L.Act(act.Act), act.Manual ? L.T("routes.manual") : "",
-                          Routes.Describe(em, r.Patrol, units), Starter.IsRunning(r.Patrol) ? L.T("routes.running") : "",
+                          Routes.Describe(em, r.Patrol), Starter.IsRunning(r.Patrol) ? L.T("routes.running") : "",
                           Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z),
                           stops.Length > 0 ? ", " + stops : "", Settings.Excluded(r.Key) ? L.T("routes.excluded") : ""));
         }
@@ -125,7 +132,7 @@ public class Commands
         {
             var parts = new List<string>();
             foreach (var p in online) parts.Add($"{p.Name} - {L.Act(p.Act.Act)}");
-            ctx.Reply(L.T("act.online", string.Join(", ", parts)));
+            foreach (var line in ChatLines.Pack(parts, ", ", L.T("act.online", ""))) ctx.Reply(line);
         }
 
         var names = new List<string>();
@@ -134,9 +141,8 @@ public class Commands
             string n = L.Route(r.Key);
             if (Acts.OfRoute(em, prefabs, r).Act == mine.Act && !names.Contains(n)) names.Add(n);
         }
-        ctx.Reply(names.Count > 0
-            ? L.T("act.routes", L.Act(mine.Act), string.Join(", ", names))
-            : L.T("act.noroutes", L.Act(mine.Act)));
+        if (names.Count == 0) ctx.Reply(L.T("act.noroutes", L.Act(mine.Act)));
+        else foreach (var line in ChatLines.Pack(names, ", ", L.T("act.routes", L.Act(mine.Act), ""))) ctx.Reply(line);
     }
 
     // ---- admin: map icons ----
@@ -180,7 +186,7 @@ public class Commands
             list.Add((name, kv.Key.GuidHash));
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-        foreach (var i in list) Plugin.Logger.LogInfo($"CaravanTracker icon: {i.Name} {i.Guid}");
+        foreach (var i in list) Plugin.Info($"CaravanTracker icon: {i.Name} {i.Guid}");
 
         const int perPage = 15;
         int pages = Math.Max(1, (list.Count + perPage - 1) / perPage);
@@ -211,13 +217,14 @@ public class Commands
         ctx.Reply(Tracker.LastStats);
     }
 
-    [Command("lang", adminOnly: true, usage: "<en|ru>", description: "Language of chat messages")]
+    // Personal: every player picks their own language. The default for players who haven't is General.Language.
+    [Command("lang", usage: "<en|ru>", description: "Your language of the mod's chat messages")]
     public void Lang(ChatCommandContext ctx, string lang)
     {
-        lang = lang.ToLowerInvariant();
-        if (lang != "en" && lang != "ru") { ctx.Reply("en | ru"); return; }
-        Settings.Language.Value = lang;
-        Settings.Save();
+        lang = lang.Trim().ToLowerInvariant();
+        if (!L.Known(lang)) { ctx.Reply("en | ru"); return; }
+        Languages.Set(ctx.Event.User.PlatformId, lang);
+        L.Use(lang);
         ctx.Reply(L.T("lang.ok"));
     }
 
@@ -236,7 +243,7 @@ public class Commands
     public void StartStatus(ChatCommandContext ctx)
     {
         if (!Ready(ctx, out var em, out _)) return;
-        ctx.Reply(Starter.Status(em));
+        foreach (var line in Starter.Status(em)) ctx.Reply(line);
     }
 
     [Command("stop", adminOnly: true, description: "Stop tracking all started caravans and restore normal route settings")]
@@ -264,12 +271,14 @@ public class Commands
         var parts = new List<string>();
         for (int act = 1; act <= 4; act++)
             parts.Add(L.T("auto.actline", L.Act(act), Starter.AutoCount(act), Math.Ceiling(AutoStart.MinutesLeft(act))));
-        ctx.Reply(string.Join("; ", parts));
-        if (AutoStart.LastResults.Count > 0) ctx.Reply(L.T("auto.last", string.Join("; ", AutoStart.LastResults)));
+        foreach (var line in ChatLines.Pack(parts, "; ")) ctx.Reply(line);
+        if (AutoStart.LastResults.Count > 0)
+            foreach (var line in ChatLines.Pack(AutoStart.LastResults, "; ", L.T("auto.last", ""))) ctx.Reply(line);
     }
 
     static string SourceText() =>
-        L.T("source.now", Settings.ModOnly ? L.T("source.mod") : Settings.GameOnly ? L.T("source.game") : L.T("source.both"));
+        L.T("source.now", Settings.ModOnly ? L.T("source.mod") : Settings.GameOnly ? L.T("source.game") : L.T("source.both")) +
+        (Settings.ModOnly && Settings.AutoInterval.Value <= 0 ? " " + L.T("auto.modoff") : "");
 
     [Command("source", adminOnly: true, usage: "[mod|game|both]", description: "Who starts caravans: only the mod, only the game, or both")]
     public void Source(ChatCommandContext ctx, string source = "")
@@ -281,11 +290,22 @@ public class Commands
             if (v == null) { ctx.Reply("mod | game | both"); return; }
             Settings.Source.Value = v;
             Settings.Save();
-            Plugin.Logger.LogInfo($"CaravanTracker: source set to {v} by command");
+            Plugin.Info($"CaravanTracker: source set to {v} by command");
             if (v != "Game") AutoStart.Restart();
             Starter.ApplySource(em, prefabs);
         }
         ctx.Reply(SourceText());
+    }
+
+    [Command("cleanup", adminOnly: true, description: "Before removing the mod: stop starts, give routes the game's settings back, remove the mod's icons")]
+    public void Cleanup(ChatCommandContext ctx)
+    {
+        if (!Ready(ctx, out var em, out var prefabs)) return;
+        var r = Starter.Cleanup(em, prefabs);
+        Tracker.Tick(false);
+        Plugin.Info($"CaravanTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
+                              "icons removed; the mod changes nothing more until the server restarts");
+        ctx.Reply(L.T("cleanup.ok", r.Runs, r.Routes, r.Units));
     }
 
     [Command("autonow", shortHand: "an", adminOnly: true, description: "Run auto-start right now, ignoring the interval")]
@@ -296,7 +316,7 @@ public class Commands
         if (results.Count == 0) { ctx.Reply(L.T("auto.nothing")); return; }
         foreach (var r in results)
         {
-            Plugin.Logger.LogInfo($"CaravanTracker auto (command): {r.Text}");
+            Plugin.Info($"CaravanTracker auto (command): {r.Text}");
             ctx.Reply(r.Text);
         }
     }

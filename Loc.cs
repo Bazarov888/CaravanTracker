@@ -3,13 +3,42 @@ using System.Collections.Generic;
 
 namespace CaravanTracker;
 
-// Chat texts in English and Russian. The language is set by General.Language in the config.
-// Placeholders {0}, {1}... are filled in the order the code passes the values.
+// Chat texts in English and Russian. Each player can pick their own language (.cv lang, see Languages);
+// General.Language in the config is the default. Placeholders {0}, {1}... are filled in the order the code
+// passes the values.
 static class L
 {
+    // Language of the player being answered now (set around each command and each personal message);
+    // null = the server default.
+    static string _lang;
+
+    public static bool Known(string lang) => lang == "en" || lang == "ru";
+    static bool Russian => (_lang ?? (Settings.Russian ? "ru" : "en")) == "ru";
+
+    public static void Use(ulong platformId) => _lang = Languages.Of(platformId);
+    public static void Use(string lang) => _lang = Known(lang) ? lang : null;
+    public static void UseDefault() => _lang = null;
+    public static string Current => _lang;
+
+    // A text in a given language, whatever language is in use now.
+    public static string In(string lang, string key, params object[] args)
+    {
+        var saved = _lang;
+        try { Use(lang); return T(key, args); }
+        finally { _lang = saved; }
+    }
+
+    // A text in the language of one player, whatever language is in use now.
+    public static string For(ulong platformId, string key, params object[] args)
+    {
+        var saved = _lang;
+        try { Use(platformId); return T(key, args); }
+        finally { _lang = saved; }
+    }
+
     public static string T(string key, params object[] args)
     {
-        var table = Settings.Russian ? Ru : En;
+        var table = Russian ? Ru : En;
         if (!table.TryGetValue(key, out var text) && !En.TryGetValue(key, out text)) return key;
         if (args == null || args.Length == 0) return text;
         try { return string.Format(text, args); }
@@ -20,7 +49,7 @@ static class L
     public static string Route(string key)
     {
         if (string.IsNullOrEmpty(key)) return "?";
-        var table = Settings.Russian ? Ru : En;
+        var table = Russian ? Ru : En;
         return table.TryGetValue("route." + key, out var t) || En.TryGetValue("route." + key, out t) ? t : key;
     }
 
@@ -94,7 +123,6 @@ static class L
         ["status.gone"] = "patrol is gone",
         ["status.item"] = "{0}{1}: {2}, {3} min since start",
         ["status.auto"] = " (auto, {0})",
-        ["status.nocart"] = ", cart destroyed, the rest goes on to the end",
         ["stop.ok"] = "Stopped: {0}. Route settings restored.",
 
         ["list.empty"] = "There are no caravans on the map right now.",
@@ -114,8 +142,8 @@ static class L
 
         ["act.none"] = "Your act: I. No V Blood drunk yet.",
         ["act.mine"] = "Your act: {0}. V Blood drunk: {1}, the highest: {2} (lvl {3}).",
-        ["act.online"] = "Online: {0}.",
-        ["act.routes"] = "Routes of {0}: {1}.",
+        ["act.online"] = "Online: {0}",
+        ["act.routes"] = "Routes of {0}: {1}",
         ["act.noroutes"] = "No routes in {0}, auto-start uses the nearest lower act.",
 
         ["icon.bad"] = "{0} is not an icon. Use a name ({1}) or a number from .cv icons",
@@ -123,7 +151,8 @@ static class L
         ["icon.ok"] = "Caravan icon: {0} ({1}).",
         ["icons.head"] = "Icons: {0}, page {1}/{2}. All of them are written to the server log.",
         ["mode.bad"] = "Mode: direct or proxy.",
-        ["lang.ok"] = "Language: English.",
+        ["lang.ok"] = "Language: English. Only for you; other players keep theirs.",
+        ["welcome"] = "Welcome! Every caravan here is shown on the map, and new ones set out in your act. {0} - caravans by distance, {1} - map marker on the nearest. Language: {2} / {3}",
 
         ["auto.off"] = "Auto-start is off. Turn it on: .cv auto <minutes>",
         ["auto.status"] = "Auto-start: every {0} min per act, {1}, at most {2} per act and {3} in total. On the road now: {4}.",
@@ -134,6 +163,10 @@ static class L
         ["auto.nothing"] = "Nothing to start now.",
         ["auto.nobody"] = "Nobody is online, skipped.",
         ["auto.gameonly"] = "Source = Game: only the game starts caravans, auto-start is off. Change: .cv source mod",
+        ["auto.modoff"] = "Auto-start is off, so with Source = Mod no caravans appear at all. Turn it on: .cv auto 20",
+        ["routes.adminonly"] = "This command is for admins on this server.",
+        ["cleanup.ok"] = "Cleaned up: starts stopped {0}, routes restored {1}, units given their freezing back {2}, the mod's icons removed. Until the server restarts the mod changes nothing. Now remove CaravanTracker.dll and restart the server.",
+        ["cleanup.paused"] = "The mod is paused after .cv cleanup until the server restarts.",
         ["source.now"] = "Caravans: {0}.",
         ["source.mod"] = "only the mod's, the game doesn't spawn them by itself",
         ["source.game"] = "only the game's, auto-start is off",
@@ -213,7 +246,6 @@ static class L
         ["status.gone"] = "патруль пропал",
         ["status.item"] = "«{0}»{1}: {2}, {3} мин с запуска",
         ["status.auto"] = " (авто, {0})",
-        ["status.nocart"] = ", повозка разбита, остаток едет до конца",
         ["stop.ok"] = "Остановлено запусков: {0}. Настройки маршрутов возвращены.",
 
         ["list.empty"] = "Сейчас на карте нет ни одного каравана.",
@@ -233,8 +265,8 @@ static class L
 
         ["act.none"] = "Твой акт: I. Выпитых V Blood пока нет.",
         ["act.mine"] = "Твой {0}. Выпито V Blood: {1}, старший: {2} (ур. {3}).",
-        ["act.online"] = "Онлайн: {0}.",
-        ["act.routes"] = "Маршруты ({0}): {1}.",
+        ["act.online"] = "Онлайн: {0}",
+        ["act.routes"] = "Маршруты ({0}): {1}",
         ["act.noroutes"] = "Маршрутов нет ({0}), автозапуск возьмёт ближайший младший акт.",
 
         ["icon.bad"] = "{0} - не иконка. Нужно имя ({1}) или номер из .cv icons",
@@ -242,7 +274,8 @@ static class L
         ["icon.ok"] = "Иконка караванов: {0} ({1}).",
         ["icons.head"] = "Иконок: {0}, страница {1}/{2}. Все записаны в лог сервера.",
         ["mode.bad"] = "Режим: direct или proxy.",
-        ["lang.ok"] = "Язык: русский.",
+        ["lang.ok"] = "Язык: русский. Только для тебя, у остальных игроков свой.",
+        ["welcome"] = "Добро пожаловать! Здесь все караваны видны на карте, а новые выходят в твоём акте. {0} - список караванов, {1} - метка на ближайшем. Язык: {2} / {3}",
 
         ["auto.off"] = "Автозапуск выключен. Включить: .cv auto <минуты>",
         ["auto.status"] = "Автозапуск: раз в {0} мин в каждом акте, {1}, не больше {2} на акт и {3} всего. Сейчас едут: {4}.",
@@ -253,6 +286,10 @@ static class L
         ["auto.nothing"] = "Сейчас запускать нечего.",
         ["auto.nobody"] = "На сервере никого нет, пропуск.",
         ["auto.gameonly"] = "Source = Game: караваны запускает только игра, автозапуск выключен. Сменить: .cv source mod",
+        ["auto.modoff"] = "Автозапуск выключен, а при Source = Mod караванов не будет совсем. Включить: .cv auto 20",
+        ["routes.adminonly"] = "На этом сервере эта команда только для админов.",
+        ["cleanup.ok"] = "Очищено: остановлено запусков {0}, маршрутов восстановлено {1}, юнитам возвращена заморозка {2}, иконки мода удалены. До перезапуска сервера мод ничего не меняет. Теперь удали CaravanTracker.dll и перезапусти сервер.",
+        ["cleanup.paused"] = "Мод на паузе после .cv cleanup до перезапуска сервера.",
         ["source.now"] = "Караваны: {0}.",
         ["source.mod"] = "только мода, сама игра их не выпускает",
         ["source.game"] = "только игры, автозапуск выключен",

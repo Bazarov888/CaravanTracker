@@ -9,7 +9,8 @@ namespace CaravanTracker;
 // advanced one, see Scope). In each such act a caravan starts on a free route if at least IntervalMinutes
 // passed since the previous auto-start in that act and the MaxPerAct and MaxTotal limits allow it.
 // If an act has no routes, the nearest lower act with routes is used. Nobody online - nothing starts.
-// Routes from ExcludedRoutes are never used. Routes standing at the start of their path go first.
+// Routes from ExcludedRoutes are never used. Which routes are free and which one goes first is decided
+// by RouteLogic (IsFree, Choose).
 static class AutoStart
 {
     static readonly Dictionary<int, DateTime> LastStart = new();
@@ -38,7 +39,7 @@ static class AutoStart
 
     public static void Tick()
     {
-        if (Settings.AutoInterval.Value <= 0 || Settings.GameOnly) return;
+        if (Settings.AutoInterval.Value <= 0 || Settings.GameOnly || Starter.Paused) return;
         var world = Caravans.ServerWorld();
         var prefabs = world == null ? null : Caravans.Prefabs(world);
         if (prefabs == null) return;
@@ -55,66 +56,9 @@ static class AutoStart
         foreach (var r in results)
         {
             LastResults.Add(r.Text);
-            if (r.Started) Plugin.Logger.LogInfo($"CaravanTracker auto: {r.Text}");
+            if (r.Started) Plugin.Info($"CaravanTracker auto: {r.Text}");
             else Plugin.Trace($"CaravanTracker auto: {r.Text}");
         }
-    }
-
-    // Free route: the mod isn't starting it now and there is no caravan on it: no squad at all, or the squad
-    // froze at the end of the route (it vanishes when approached), or what is left of a robbed caravan
-    // (the horse without its cart) froze mid-route with no players near and would stand there until someone
-    // comes. Starting the route removes such leftovers like any stuck squad.
-    static bool IsFree(EntityManager em, Routes.Route r)
-    {
-        if (Starter.IsRunning(r.Patrol) || Starter.RecentlyFailed(r.Key)) return false;
-        var units = Routes.ActiveUnits(em, r.Patrol);
-        if (units.Count == 0) return true;
-        if (Routes.MoveStatus(em, r.Patrol) == "WaitForDespawn") return true;
-        if (Routes.CartsOf(em, units).Count > 0) return false;
-        // Frozen units are moved by the game off the map, to (10000, 10000).
-        return units.TrueForAll(u => !Caravans.OnMap(Caravans.PositionOf(em, u)));
-    }
-
-    // Which free routes go first: those standing at the start of their path, then those at their last stop
-    // (the game returns them to the start when they are started), then those left mid-way by an earlier
-    // caravan (the mod puts them back to the start, see ResetToStart; with it off, the one with the most
-    // stops left). Within a group Random takes any route, Rotate the one the mod started longest ago.
-    static Routes.Route Pick(EntityManager em, List<Routes.Route> free)
-    {
-        var atStart = new List<Routes.Route>();
-        var atEnd = new List<Routes.Route>();
-        var midway = new List<Routes.Route>();
-        foreach (var r in free)
-        {
-            var p = Routes.StopsOf(em, r.Patrol);
-            if (p == null || p.AtStart) atStart.Add(r);
-            else if (Routes.MoveStatus(em, r.Patrol) == "WaitForDespawn") atEnd.Add(r);
-            else midway.Add(r);
-        }
-        if (atStart.Count > 0) return OneOf(atStart);
-        if (atEnd.Count > 0) return OneOf(atEnd);
-        if (Settings.ResetToStart.Value) return OneOf(midway);
-        Routes.Route best = null;
-        int bestLeft = -1;
-        foreach (var r in midway)
-        {
-            int left = Routes.StopsOf(em, r.Patrol)?.Left ?? 0;
-            if (left > bestLeft) { best = r; bestLeft = left; }
-        }
-        return best ?? free[Rng.Next(free.Count)];
-    }
-
-    static Routes.Route OneOf(List<Routes.Route> routes)
-    {
-        if (!Settings.RotatePick) return routes[Rng.Next(routes.Count)];
-        Routes.Route oldest = null;
-        var oldestAt = DateTime.MaxValue;
-        foreach (var r in routes)
-        {
-            var at = LastRouteStart.TryGetValue(r.Key, out var t) ? t : DateTime.MinValue;
-            if (oldest == null || at < oldestAt) { oldest = r; oldestAt = at; }
-        }
-        return oldest;
     }
 
     // force = ignore the interval (the .cv autonow command). Returns what happened in each act;
@@ -122,6 +66,11 @@ static class AutoStart
     public static List<(bool Started, string Text)> Run(EntityManager em, PrefabCollectionSystem prefabs, bool force)
     {
         var results = new List<(bool Started, string Text)>();
+        if (Starter.Paused)
+        {
+            results.Add((false, L.T("cleanup.paused")));
+            return results;
+        }
         if (Settings.GameOnly)
         {
             results.Add((false, L.T("auto.gameonly")));
@@ -146,6 +95,7 @@ static class AutoStart
         var routeActs = new Dictionary<(int, int), int>();
         foreach (var r in routes) routeActs[(r.Patrol.Index, r.Patrol.Version)] = Acts.OfRoute(em, prefabs, r).Act;
         int ActOf(Routes.Route r) => routeActs[(r.Patrol.Index, r.Patrol.Version)];
+        var actsWithRoutes = new HashSet<int>(routeActs.Values);
 
         int interval = Math.Max(1, Settings.AutoInterval.Value);
         int maxPerAct = Math.Max(1, Settings.AutoMaxPerAct.Value);
@@ -155,9 +105,7 @@ static class AutoStart
 
         foreach (int playerAct in playerActs)
         {
-            // Nearest act at or below the player's act that has routes.
-            int act = playerAct;
-            while (act >= 1 && !routes.Exists(r => ActOf(r) == act)) act--;
+            int act = ActLogic.Served(playerAct, actsWithRoutes);
             if (act < 1)
             {
                 results.Add((false, L.T("auto.noroutes", L.Act(playerAct))));
@@ -176,14 +124,26 @@ static class AutoStart
                 results.Add((false, L.T("auto.maxact", L.Act(act), Starter.AutoCount(act), maxPerAct)));
                 continue;
             }
-            var free = routes.FindAll(r => ActOf(r) == act && IsFree(em, r));
+            var candidates = routes.FindAll(r => ActOf(r) == act);
+            var free = new List<Routes.Route>();
+            var snaps = new List<RouteSnap>();
+            foreach (var r in candidates)
+            {
+                var snap = Routes.Snap(em, r);
+                if (!RouteLogic.IsFree(RouteLogic.Classify(snap))) continue;
+                free.Add(r);
+                snaps.Add(snap);
+            }
             if (free.Count == 0)
             {
                 results.Add((false, L.T("auto.busy", L.Act(act))));
                 continue;
             }
-            var pick = Pick(em, free);
-            Starter.Start(em, pick, Entity.Null, true, act);
+            int chosen = RouteLogic.Choose(snaps, Settings.ResetToStart.Value, Settings.RotatePick,
+                                           key => LastRouteStart.TryGetValue(key, out var t) ? t : DateTime.MinValue, Rng);
+            var pick = free[chosen];
+            Starter.Start(em, pick, Entity.Null, true, act,
+                          $", picked from {free.Count} free: {RouteLogic.Groups(snaps)}, this one {RouteLogic.Group(snaps[chosen])}");
             var stops = Routes.StopsOf(em, pick.Patrol);
             LastStart[act] = now;
             LastRouteStart[pick.Key] = now;

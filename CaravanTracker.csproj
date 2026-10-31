@@ -4,8 +4,13 @@
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>CaravanTracker</AssemblyName>
     <RootNamespace>CaravanTracker</RootNamespace>
-    <Version>1.0.5</Version>
-    <Description>Caravans on the map, chat announcements and automatic caravan starts by act for V Rising servers.</Description>
+    <!-- The only place the version and the plugin identity are written. MyPluginInfo (used by the code)
+         and the Thunderstore manifest.json are generated from these at build time. -->
+    <Version>1.0.8</Version>
+    <PluginGuid>Bazarov.CaravanTracker</PluginGuid>
+    <PluginName>CaravanTracker</PluginName>
+    <Description>Caravans on the map for everyone, chat announcements when they set out, and automatic caravan starts in every act where players are online.</Description>
+    <WebsiteUrl></WebsiteUrl>
     <Authors>Bazarov</Authors>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -16,6 +21,11 @@
     <NuGetAudit>false</NuGetAudit>
     <RestoreSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json</RestoreSources>
   </PropertyGroup>
+
+  <!-- tests/ is a separate program (tests of Logic/), not part of the mod. -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+  </ItemGroup>
 
   <!-- Default build: game, BepInEx and VCF reference assemblies come from NuGet, so the mod builds anywhere:
          dotnet build -c Release -->
@@ -38,13 +48,48 @@
     <Reference Include="$(BepDir)/plugins/**/VampireCommandFramework.dll" Private="false" />
   </ItemGroup>
 
-  <!-- Release build also makes the Thunderstore package: dist/CaravanTracker-<version>.zip -->
+  <!-- MyPluginInfo.PLUGIN_GUID / PLUGIN_NAME / PLUGIN_VERSION for the code, generated into obj/.
+       Inside the text %3B is ";" and &quot; is a double quote: MSBuild would otherwise split the text at ";". -->
+  <Target Name="GenerateMyPluginInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <MyPluginInfoFile>$(IntermediateOutputPath)MyPluginInfo.g.cs</MyPluginInfoFile>
+      <MyPluginInfoText>// Generated from CaravanTracker.csproj at build time. Change the version there.
+namespace CaravanTracker
+{
+    public static class MyPluginInfo
+    {
+        public const string PLUGIN_GUID = &quot;$(PluginGuid)&quot;%3B
+        public const string PLUGIN_NAME = &quot;$(PluginName)&quot;%3B
+        public const string PLUGIN_VERSION = &quot;$(Version)&quot;%3B
+    }
+}</MyPluginInfoText>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(MyPluginInfoFile)" Lines="$(MyPluginInfoText)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(MyPluginInfoFile)" />
+      <FileWrites Include="$(MyPluginInfoFile)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Release build also makes the Thunderstore package: dist/CaravanTracker-<version>.zip,
+       with manifest.json generated from the properties above. -->
   <Target Name="ThunderstorePackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <PropertyGroup>
       <PkgDir>$(MSBuildProjectDirectory)/dist/pkg</PkgDir>
+      <ManifestText>{
+  &quot;name&quot;: &quot;$(PluginName)&quot;,
+  &quot;version_number&quot;: &quot;$(Version)&quot;,
+  &quot;website_url&quot;: &quot;$(WebsiteUrl)&quot;,
+  &quot;description&quot;: &quot;$(Description)&quot;,
+  &quot;dependencies&quot;: [
+    &quot;BepInEx-BepInExPack_V_Rising-1.733.2&quot;,
+    &quot;deca-VampireCommandFramework-0.10.4&quot;
+  ]
+}</ManifestText>
     </PropertyGroup>
     <RemoveDir Directories="$(PkgDir)" />
-    <Copy SourceFiles="manifest.json;README.md;CHANGELOG.md;icon.png;LICENSE;$(TargetPath)" DestinationFolder="$(PkgDir)" />
+    <Copy SourceFiles="README.md;CHANGELOG.md;icon.png;LICENSE;$(TargetPath)" DestinationFolder="$(PkgDir)" />
+    <WriteLinesToFile File="$(PkgDir)/manifest.json" Lines="$(ManifestText)" Overwrite="true" />
     <ZipDirectory SourceDirectory="$(PkgDir)" DestinationFile="$(MSBuildProjectDirectory)/dist/CaravanTracker-$(Version).zip" Overwrite="true" />
     <RemoveDir Directories="$(PkgDir)" />
   </Target>
