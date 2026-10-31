@@ -63,7 +63,9 @@ Observed on a live server (game build with BepInEx 6.0.0-be.733):
 - A squad appears where the patrol entity stands, whatever its stop index. Starting a frozen route at its last stop
   with spawning allowed at once put the squad at the end of the route (31.10, MilitiaCotton, 0 m from the end point).
 - A route the game finishes itself while its patrol is awake goes back to its first stop, position included
-  (31.10, BanditCopper: the next start found the patrol at its first stop).
+  (31.10, BanditCopper; MilitiaCotton four times: its first stop is at (-1677, -926), its last at (-1639, -896),
+  and every start after a finished run found the patrol at the first stop).
+- In a fight the route stops (`StoppedDueToUnit`) and the animal can be more than 30 m from its cart.
 - Routes finished while no player was near stay frozen at their last stop (`WaitForDespawn`, no units) until
   something wakes them (dump of 30.10: most caravan patrols were in that state).
 
@@ -124,7 +126,8 @@ settings (range above 1000, zero timers, no freeze tag) and gives them the game'
 ## Tracking and icons (`Tracker.Tick`)
 
 - A fast search every check, a full pass over networked entities every `SafetyScanMinutes` as a safety net.
-- A caravan is a cart on the map pulled by its horse (horse exists, on the map, within 30 m), or a container with loot.
+- A caravan is a cart on the map pulled by its horse (horse exists, on the map, within 30 m or the route is in a
+  fight: `CaravanRules.Pulled`), or a container with loot.
   Carts at `WaitForDespawn` and carts no horse pulls are skipped.
 - A cart is announced once, the first time it is seen on the map after the first check. Frozen carts are not announced.
 - When a caravan disappears, `GoneLogic` names the reason from what the route does now. Checks are 30 s apart,

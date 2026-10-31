@@ -51,39 +51,48 @@ public static class RouteLogic
     public static bool IsFree(RouteState state) =>
         state == RouteState.Empty || state == RouteState.AtEnd || state == RouteState.FrozenLeftover;
 
-    // Routes standing at the start of their path go first. Then routes at their last stop: the game returns
-    // them to the start when they are started. Then routes left mid-way by an earlier caravan: the mod puts
-    // them back to the start (ResetToStart), or with that off the caravan sets out from where the route stands.
+    // Where a free route stands, for the pick order and the log.
     public static PickGroup Group(RouteSnap s)
     {
         if (s.Stops == null || s.Stops.AtStart) return PickGroup.AtStart;
         return s.AtEndState ? PickGroup.AtEnd : PickGroup.Midway;
     }
 
-    // Index of the route to start among free ones. rotate: within the group the route the mod started longest
-    // ago (lastStart gives DateTime.MinValue for never), otherwise a random one. Mid-way routes without
-    // ResetToStart: the one with the most stops left, so the caravan drives the longest way.
+    // Index of the route to start among free ones, -1 if none.
+    // Routes at their first stop and routes at their last stop go first, as one group: both set out from the
+    // first stop (a route at its last stop is woken first, see RunLogic.ReadyToArm). Routes left mid-way by an
+    // earlier caravan come after them.
+    // Within a group: rotate takes the route the mod started longest ago (lastStart gives DateTime.MinValue for
+    // never); otherwise a random one, but not the route started last while another one is there. Without that a
+    // route that just finished stood at its first stop again and was picked over and over (31.10: MilitiaCotton
+    // five times in a row while routes at their last stop waited). Mid-way routes without ResetToStart: the one
+    // with the most stops left, so the caravan drives the longest way.
     public static int Choose(IReadOnlyList<RouteSnap> free, bool resetToStart, bool rotate,
                              Func<string, DateTime> lastStart, Random rng)
     {
-        if (free.Count == 0) return -1;
-        foreach (var group in new[] { PickGroup.AtStart, PickGroup.AtEnd, PickGroup.Midway })
+        var ready = new List<int>();
+        var midway = new List<int>();
+        for (int i = 0; i < free.Count; i++) (Group(free[i]) == PickGroup.Midway ? midway : ready).Add(i);
+        if (ready.Count > 0) return OneOf(free, ready, rotate, lastStart, rng);
+        if (midway.Count == 0) return -1;
+        if (resetToStart) return OneOf(free, midway, rotate, lastStart, rng);
+        int best = midway[0];
+        foreach (int i in midway) if (Left(free[i]) > Left(free[best])) best = i;
+        return best;
+    }
+
+    static int OneOf(IReadOnlyList<RouteSnap> free, List<int> idx, bool rotate, Func<string, DateTime> lastStart, Random rng)
+    {
+        int oldest = idx[0], newest = idx[0];
+        foreach (int i in idx)
         {
-            var idx = new List<int>();
-            for (int i = 0; i < free.Count; i++) if (Group(free[i]) == group) idx.Add(i);
-            if (idx.Count == 0) continue;
-            if (group == PickGroup.Midway && !resetToStart)
-            {
-                int best = idx[0];
-                foreach (int i in idx) if (Left(free[i]) > Left(free[best])) best = i;
-                return best;
-            }
-            if (!rotate) return idx[rng.Next(idx.Count)];
-            int oldest = idx[0];
-            foreach (int i in idx) if (lastStart(free[i].Key) < lastStart(free[oldest].Key)) oldest = i;
-            return oldest;
+            if (lastStart(free[i].Key) < lastStart(free[oldest].Key)) oldest = i;
+            if (lastStart(free[i].Key) > lastStart(free[newest].Key)) newest = i;
         }
-        return -1;
+        if (rotate) return oldest;
+        var pool = new List<int>(idx);
+        if (pool.Count > 1 && lastStart(free[newest].Key) != DateTime.MinValue) pool.Remove(newest);
+        return pool[rng.Next(pool.Count)];
     }
 
     static int Left(RouteSnap s) => s.Stops?.Left ?? 0;

@@ -81,6 +81,23 @@ static class Program
             for (int i = 0; i < 20; i++)
                 Eq("Plank", free[RouteLogic.Choose(free, true, false, _ => DateTime.MinValue, new Random(i))].Key);
         });
+        Test("log 31.10: the route started last isn't picked again while another one is ready", () =>
+        {
+            // MilitiaCotton finished, stood at its first stop again and was picked 5 times in a row.
+            var free = new List<RouteSnap> { Route("Cotton", stops: Stop(1, 4)), Route("Quartz", stops: Stop(1, 5)),
+                                             Route("Iron", move: "WaitForDespawn", stops: Stop(5, 5)) };
+            var last = new Dictionary<string, DateTime> { ["Cotton"] = T0 };
+            var seen = new HashSet<string>();
+            for (int i = 0; i < 50; i++)
+                seen.Add(free[RouteLogic.Choose(free, true, false, k => last.TryGetValue(k, out var t) ? t : DateTime.MinValue, new Random(i))].Key);
+            True(!seen.Contains("Cotton"), "Cotton picked again");
+            True(seen.Contains("Quartz") && seen.Contains("Iron"), "routes at the start and at the end are one group");
+        });
+        Test("a single ready route is picked even if it ran last", () =>
+        {
+            var free = new List<RouteSnap> { Route("Cotton", stops: Stop(1, 4)), Route("Copper", stops: Stop(4, 8)) };
+            Eq("Cotton", free[RouteLogic.Choose(free, true, false, k => k == "Cotton" ? T0 : DateTime.MinValue, new Random(1))].Key);
+        });
         Test("route at the end goes before routes mid-way", () =>
         {
             var free = new List<RouteSnap> { Route("Copper", stops: Stop(6, 8)), Route("Iron", move: "WaitForDespawn", stops: Stop(7, 7)) };
@@ -265,6 +282,14 @@ static class Program
             True(!CaravanRules.ShowCart(true, true, "Moving", false), "loot already shown");
             True(CaravanRules.ShowCart(true, false, "Moving", false), "moving caravan");
             True(!CaravanRules.ShowContainer(true, true) && CaravanRules.ShowContainer(false, true), "containers");
+        });
+        Test("log 31.10 21:53: a cart in a fight keeps its icon though its animal is 30+ m away", () =>
+        {
+            True(CaravanRules.Pulled(true, true, 45, "StoppedDueToUnit"), "fight");
+            True(CaravanRules.Pulled(true, true, 10, "Moving"), "on the road");
+            True(!CaravanRules.Pulled(true, true, 45, "Moving"), "animal walked off");
+            True(!CaravanRules.Pulled(false, false, float.MaxValue, "StoppedDueToUnit"), "animal gone");
+            True(!CaravanRules.Pulled(true, false, 10, "Moving"), "animal frozen off the map");
         });
         Test("a caravan is announced once, not at server start, not frozen", () =>
         {

@@ -121,7 +121,7 @@ static class Caravans
                         frozen = true;
                     }
                 }
-                bool orphan = info.Kind == Kind.Cart && !frozen && OnMap(pos) && !Pulled(em, e, pos);
+                bool orphan = info.Kind == Kind.Cart && !frozen && OnMap(pos) && !Pulled(em, e, pos, status);
                 found.Add(new Found(info.Kind, info.Route, e, pos, empty, frozen, status, patrol, stops, orphan));
             }
         }
@@ -154,13 +154,13 @@ static class Caravans
 
     // Whether a cart on the map is still pulled: its animal exists, stands on the map and is close to it.
     // A cart left behind (e.g. at the end of the route while its animal froze elsewhere) isn't a caravan.
-    static bool Pulled(EntityManager em, Entity cart, float3 cartPos)
+    static bool Pulled(EntityManager em, Entity cart, float3 cartPos, string move)
     {
         if (!Has<ProjectM.Shared.Script_CarriageData>(em, cart)) return false;
         var horse = em.GetComponentData<ProjectM.Shared.Script_CarriageData>(cart).Horse.GetEntityOnServer();
-        if (horse == Entity.Null || !em.Exists(horse)) return false;
-        var horsePos = PositionOf(em, horse);
-        return OnMap(horsePos) && Dist2(horsePos, cartPos) < 30f;
+        bool exists = horse != Entity.Null && em.Exists(horse);
+        var horsePos = exists ? PositionOf(em, horse) : default;
+        return CaravanRules.Pulled(exists, exists && OnMap(horsePos), exists ? Dist2(horsePos, cartPos) : float.MaxValue, move);
     }
 
     // Which found objects are caravans: CaravanRules. Which caravans get a map icon is set by IconOnLoot

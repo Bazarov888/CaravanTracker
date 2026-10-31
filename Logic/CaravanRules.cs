@@ -3,6 +3,14 @@ namespace CaravanTracker;
 // Which found objects are caravans, and which caravans are announced.
 public static class CaravanRules
 {
+    public const float PullDistance = 30f;
+
+    // A cart is still pulled while its animal exists, stands on the map and is near it. In a fight the route
+    // stops (StoppedDueToUnit) and the animal can end up farther away (31.10 21:53, MilitiaCotton: the icon
+    // vanished for 1.5 minutes during the attack), so then any distance counts.
+    public static bool Pulled(bool animalExists, bool animalOnMap, float distance, string move) =>
+        animalExists && animalOnMap && (distance < PullDistance || move == "StoppedDueToUnit");
+
     // A loot container is a caravan while it has loot and stands on the map.
     public static bool ShowContainer(bool empty, bool onMap) => !empty && onMap;
 

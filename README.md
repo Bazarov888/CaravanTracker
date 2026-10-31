@@ -75,7 +75,7 @@ For admins:
 | AutoStart | Scope | `AllOnlineActs` | `AllOnlineActs` or `Leader` (only the most advanced player's act) |
 | AutoStart | MaxPerAct | `2` | Caravans started by the mod on the road at once in one act |
 | AutoStart | MaxTotal | `6` | The same for the whole server |
-| AutoStart | RoutePick | `Random` | `Random` or `Rotate` (the route started longest ago) |
+| AutoStart | RoutePick | `Random` | `Random` (any free route but the one started last) or `Rotate` (the route started longest ago) |
 | AutoStart | ExcludedRoutes | empty | Routes auto-start never uses, e.g. `BanditPrisoners,ChurchLegion` |
 | AutoStart | RouteActs | empty | Manual acts, e.g. `MilitiaIron=2,ChuchSilver=4` |
 | Start | SpawnTimeoutMinutes | `5` | How long to wait for a started squad to appear |
@@ -144,7 +144,7 @@ License: MIT.
 
 Русский язык сообщений включается в конфиге (`Language = ru`) или командой `.cv lang ru`.
 
-Автозапуск: в каждом акте, где есть игрок онлайн, новый караван выходит не чаще раза в `IntervalMinutes` минут, пока в акте едет меньше `MaxPerAct`, а на сервере меньше `MaxTotal` караванов мода. Сначала берутся маршруты, которые стоят в начале пути. Акт игрока считается по выпитым V Blood, акт маршрута по уровню охраны. Проверить привязку маршрутов можно командой `.cv r`, поправить вручную через `RouteActs`, убрать маршрут из автозапуска через `ExcludedRoutes`.
+Автозапуск: в каждом акте, где есть игрок онлайн, новый караван выходит не чаще раза в `IntervalMinutes` минут, пока в акте едет меньше `MaxPerAct`, а на сервере меньше `MaxTotal` караванов мода. Сначала берутся маршруты, которые стоят в начале или в конце пути, причём не тот, что мод запускал последним. Акт игрока считается по выпитым V Blood, акт маршрута по уровню охраны. Проверить привязку маршрутов можно командой `.cv r`, поправить вручную через `RouteActs`, убрать маршрут из автозапуска через `ExcludedRoutes`.
 
 Кто запускает караваны, задаёт `Source` (или команда `.cv source`): `Mod` - только мод, сама игра больше не выпускает караван, когда игрок подходит к маршруту; `Game` - только игра, автозапуск выключен; `Both` - и мод, и игра.
 
