@@ -52,12 +52,17 @@ static class Icons
     {
         int iconGuid = Settings.IconGuid;
         var ours = Ours();
+        var mine = new HashSet<int>(ours);
+        mine.UnionWith(Settings.IconPresets.Values);
         var wanted = new Dictionary<(int, int), Entity>();
         foreach (var c in caravans) wanted[(c.Target.Index, c.Target.Version)] = c.Target;
 
-        // An icon on a caravan stays only if it is of the current kind and the caravan is still wanted.
-        // Our icons on vanished objects are removed. Other icons are left alone: game icons hang on
-        // marker objects (they have Attach), ours in direct mode don't.
+        // Only icons the mod could have made are touched. On a caravan: icons of the mod's kinds (current, used
+        // before, or a named preset, in case Icon was changed in the config by hand); such an icon stays if it is
+        // of the current kind and the caravan is still wanted, otherwise it is removed. Icons of other kinds on a
+        // caravan (another mod's) are left alone. Off a caravan: only an icon of the current or an earlier kind
+        // whose object has vanished is removed. Icons on marker objects (they have Attach) are never touched:
+        // the game's own merchant icons hang on such markers.
         var covered = new HashSet<(int, int)>();
         int removed = 0, globalized = 0;
         var builder = new EntityQueryBuilder(Allocator.Temp)
@@ -74,7 +79,7 @@ static class Icons
                 var t = em.GetComponentData<MapIconTargetEntity>(icon).TargetEntity.GetEntityOnServer();
                 bool exists = em.Exists(t);
                 bool caravanTarget = exists && Caravans.IsCaravanEntity(em, prefabs, t);
-                if (!caravanTarget && !(ours.Contains(pg) && !exists && !Caravans.Has<Attach>(em, icon))) continue;
+                if (caravanTarget ? !mine.Contains(pg) : (!ours.Contains(pg) || exists || Caravans.Has<Attach>(em, icon))) continue;
                 var key = (t.Index, t.Version);
                 if (caravanTarget && pg == iconGuid && wanted.ContainsKey(key) && covered.Add(key))
                 {

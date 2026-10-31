@@ -38,7 +38,7 @@ static class AutoStart
 
     public static void Tick()
     {
-        if (Settings.AutoInterval.Value <= 0 || Settings.GameOnly) return;
+        if (Settings.AutoInterval.Value <= 0 || Settings.GameOnly || Starter.Paused) return;
         var world = Caravans.ServerWorld();
         var prefabs = world == null ? null : Caravans.Prefabs(world);
         if (prefabs == null) return;
@@ -122,6 +122,11 @@ static class AutoStart
     public static List<(bool Started, string Text)> Run(EntityManager em, PrefabCollectionSystem prefabs, bool force)
     {
         var results = new List<(bool Started, string Text)>();
+        if (Starter.Paused)
+        {
+            results.Add((false, L.T("cleanup.paused")));
+            return results;
+        }
         if (Settings.GameOnly)
         {
             results.Add((false, L.T("auto.gameonly")));

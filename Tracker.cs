@@ -165,9 +165,10 @@ static class Tracker
         // the game uses it for a new caravan, that one is announced. The first check after server start
         // only remembers the carts already on the map.
         var announced = new HashSet<(int, int)>();
+        bool paused = Starter.Paused;
         foreach (var f in found)
         {
-            if (f.Kind != Kind.Cart || !Caravans.OnMap(f.Pos)) continue;
+            if (paused || f.Kind != Kind.Cart || !Caravans.OnMap(f.Pos)) continue;
             var key = (f.Entity.Index, f.Entity.Version);
             if (!_primed || _announced.Contains(key)) { announced.Add(key); continue; }
             if (f.Frozen || f.Orphan) continue;
@@ -186,11 +187,13 @@ static class Tracker
         bool proxyMode = Settings.ProxyMode;
         var none = new List<Caravans.Caravan>();
         // Frozen carts physically lie at (10000, 10000), so their icon goes on a separate marker
-        // where the patrol stands. Moving ones as the mode says.
-        var active = _caravans.FindAll(c => c.Icon && !c.Frozen);
-        var frozenWithIcon = _caravans.FindAll(c => c.Icon && c.Frozen);
+        // where the patrol stands. Moving ones as the mode says. After .cv cleanup no icons are wanted,
+        // so all of the mod's icons and markers are removed.
+        var withIcon = paused ? none : _caravans.FindAll(c => c.Icon);
+        var active = withIcon.FindAll(c => !c.Frozen);
+        var frozenWithIcon = withIcon.FindAll(c => c.Frozen);
         var direct = Icons.Sync(em, prefabs, proxyMode ? none : active);
-        var viaProxy = Proxies.Sync(em, prefabs, proxyMode ? _caravans.FindAll(c => c.Icon) : frozenWithIcon);
+        var viaProxy = Proxies.Sync(em, prefabs, proxyMode ? withIcon : frozenWithIcon);
         int created = direct.Created + viaProxy.Created;
         int removed = direct.Removed + viaProxy.Removed;
         int globalized = direct.Globalized + viaProxy.Globalized;

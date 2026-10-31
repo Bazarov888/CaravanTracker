@@ -22,6 +22,7 @@ static class Settings
     internal static ConfigEntry<string> AnnounceTo;
     internal static ConfigEntry<int> AnnounceRadius;
     internal static ConfigEntry<bool> AnnounceVanilla;
+    internal static ConfigEntry<bool> RouteCommandsForAll;
     internal static ConfigEntry<string> TitleColor;
     internal static ConfigEntry<string> TextColor;
     internal static ConfigEntry<string> CommandColor;
@@ -47,7 +48,7 @@ static class Settings
     internal static ConfigEntry<bool> EnableDiagnostics;
 
     // Ready-made map icons of the game. Any other icon can be set by its PrefabGUID number (.cv icons).
-    static readonly Dictionary<string, int> IconPresets = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, int> IconPresets = new(StringComparer.OrdinalIgnoreCase)
     {
         ["merchant"] = -360752412,  // MapIcon_POI_Discover_Merchant
         ["unknown"] = -1443504104,  // MapIcon_POI_Discover_Unknown
@@ -90,6 +91,8 @@ static class Settings
                 new AcceptableValueRange<int>(100, 10000)));
         AnnounceVanilla = cfg.Bind("Chat", "AnnounceVanilla", true,
             "Also announce caravans the game spawned by itself next to a player. false = only caravans started by the mod.");
+        RouteCommandsForAll = cfg.Bind("Chat", "RouteCommandsForAll", true,
+            "Let every player use .cv routes and .cv rm, which show where all caravan routes are. false = admins only.");
         TitleColor = cfg.Bind("Chat", "TitleColor", "#FFC83C", "Color of the first announcement line (caravan name).");
         TextColor = cfg.Bind("Chat", "TextColor", "#FFFFFF", "Color of the second announcement line (distance and direction).");
         CommandColor = cfg.Bind("Chat", "CommandColor", "#7CFC7C", "Color of the command in the announcement.");

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.6
+
+- `.cv cleanup` (admin): run it before removing the mod. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next restart the mod then changes nothing in the world.
+- With `Source = Mod`, routes are checked for blocking every 5 seconds instead of every `CheckSeconds`, so the game has less time to spawn its own caravan next to a player.
+- With `Source = Mod` and `IntervalMinutes = 0` no caravans appear at all; the server log at load and `.cv auto` now say so.
+- New setting `RouteCommandsForAll` (section Chat, on by default): `false` makes `.cv r` and `.cv rm` admin-only, since they show where every route is.
+- Map icons another mod puts on a caravan are no longer removed; the mod removes only icons of the kinds it uses.
+- The version is written only in `CaravanTracker.csproj`; `MyPluginInfo` and the Thunderstore `manifest.json` are generated from it.
+- `tools/deploy.sh` can't break when `git pull` updates the script itself, and runs a pinned `alpine/git` image.
+- CI uses current versions of the GitHub actions.
+- ARCHITECTURE.md describes how the mod works inside, for reviewers.
+
 ## 1.0.5
 
 - Fixed a started caravan setting out without guards: the start settings now stay until the whole squad has appeared, not only the animal with the cart. With `Source = Mod` the squad on the road also gets the game's normal spawn range back instead of the blocked one.

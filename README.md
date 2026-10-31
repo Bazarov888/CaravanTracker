@@ -31,6 +31,8 @@ For everyone:
 | `.cv a` | Your act and the routes of that act |
 | `.cv rm <number>` | Map marker on the point of a route from `.cv r` |
 
+`.cv r` and `.cv rm` show where every route is. With `RouteCommandsForAll = false` they are for admins only.
+
 For admins:
 
 | Command | What it does |
@@ -46,6 +48,7 @@ For admins:
 | `.cv mode <direct or proxy>` | Where the icon hangs: on the caravan or on a separate marker |
 | `.cv lang <en or ru>` | Language of chat messages |
 | `.cv stats`, `.cv refresh` | Results of the last check, or a full check right now |
+| `.cv cleanup` | Before removing the mod: give routes the game's own settings back and remove the mod's icons (see Uninstalling) |
 
 `.cv` is short for `.caravan`.
 
@@ -65,9 +68,10 @@ For admins:
 | Chat | AnnounceTo | `All` | `All`, `SameAct` (players of the caravan's act) or `Nearby` |
 | Chat | AnnounceRadius | `1500` | Meters for `Nearby` |
 | Chat | AnnounceVanilla | `true` | Also announce caravans the game spawned by itself; `false` = only the mod's |
+| Chat | RouteCommandsForAll | `true` | `.cv r` and `.cv rm` for every player; `false` = admins only |
 | Chat | TitleColor, TextColor, CommandColor | gold, white, green | Announcement colors |
 | AutoStart | Source | `Both` | `Mod` = only the mod starts caravans, the game no longer spawns them near players; `Game` = only the game, auto-start off; `Both` |
-| AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off |
+| AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off. With `Source = Mod` and `0` there are no caravans at all; the log warns about it |
 | AutoStart | Scope | `AllOnlineActs` | `AllOnlineActs` or `Leader` (only the most advanced player's act) |
 | AutoStart | MaxPerAct | `2` | Caravans started by the mod on the road at once in one act |
 | AutoStart | MaxTotal | `6` | The same for the whole server |
@@ -98,6 +102,15 @@ With r2modman or Thunderstore Mod Manager: install CaravanTracker, the dependenc
 
 Manually: put `CaravanTracker.dll` into `BepInEx/plugins/` on the server. Needs [BepInExPack V Rising](https://thunderstore.io/c/v-rising/p/BepInEx/BepInExPack_V_Rising/) and [VampireCommandFramework](https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/).
 
+## Uninstalling
+
+The mod changes some route settings in the world while it runs: with `Source = Mod` it blocks the game's own spawning, a started caravan gets start settings for a while, and the icons it creates live in the world. The server save can keep these. Before removing the mod:
+
+1. Run `.cv cleanup` in chat as admin. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next server restart the mod then changes nothing.
+2. Stop the server, delete `BepInEx/plugins/CaravanTracker`, start the server.
+
+Without the cleanup, routes blocked by `Source = Mod` would stay without caravans from the game.
+
 ## Building
 
 ```
@@ -106,7 +119,9 @@ dotnet build -c Release
 
 Reference assemblies come from NuGet (nuget.org and nuget.bepinex.dev). To build against an installed server instead: `dotnet build -c Release -p:BepDir=/path/to/server/BepInEx`.
 
-A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. When releasing a new version, change the version in three places: `CaravanTracker.csproj`, `manifest.json` and `MyPluginInfo` in `Plugin.cs`.
+A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. The version is written only in `CaravanTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
+
+How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Every push is built by GitHub Actions; the package is attached to the run as an artifact.
 
@@ -134,3 +149,5 @@ License: MIT.
 Кому приходит анонс, задаёт `AnnounceTo`: всем (`All`), игрокам того же акта (`SameAct`) или тем, кто ближе `AnnounceRadius` метров (`Nearby`).
 
 Команды и настройки описаны выше, в английской части.
+
+Перед удалением мода выполни в чате `.cv cleanup` (админ): мод вернёт маршрутам настройки игры и уберёт свои иконки. Потом останови сервер, удали папку `BepInEx/plugins/CaravanTracker` и запусти сервер. Без этого маршруты, заблокированные при `Source = Mod`, останутся без караванов игры.

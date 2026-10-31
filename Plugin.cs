@@ -7,13 +7,6 @@ using VampireCommandFramework;
 
 namespace CaravanTracker;
 
-public static class MyPluginInfo
-{
-    public const string PLUGIN_GUID = "Bazarov.CaravanTracker";
-    public const string PLUGIN_NAME = "CaravanTracker";
-    public const string PLUGIN_VERSION = "1.0.5";
-}
-
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 [BepInProcess("VRisingServer.exe")]
 [BepInDependency("gg.deca.VampireCommandFramework")]
@@ -38,6 +31,8 @@ public class Plugin : BasePlugin
         CommandRegistry.RegisterCommandType(typeof(Commands));
         if (Settings.EnableDiagnostics.Value) CommandRegistry.RegisterCommandType(typeof(DiagCommands));
         Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} loaded, source {Settings.Source.Value}, auto-start every {Settings.AutoInterval.Value} min");
+        if (Settings.ModOnly && Settings.AutoInterval.Value <= 0)
+            Log.LogWarning("CaravanTracker: Source = Mod and IntervalMinutes = 0: neither the game nor the mod starts caravans, there will be none.");
     }
 
     public override bool Unload()
@@ -48,12 +43,13 @@ public class Plugin : BasePlugin
     }
 }
 
-// Runs every server frame. Forced caravan starts are checked every frame,
-// the caravan search and auto-start run every CheckSeconds.
+// Runs every server frame. Forced caravan starts are checked every frame (the work itself once a second),
+// the spawn block (Source) every 5 seconds, the caravan search and auto-start every CheckSeconds.
 public class Ticker : UnityEngine.MonoBehaviour
 {
     public Ticker(IntPtr ptr) : base(ptr) { }
     static DateTime _next;
+    static DateTime _nextSource;
 
     public void Update()
     {
@@ -67,18 +63,26 @@ public class Ticker : UnityEngine.MonoBehaviour
             catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker start: {e}"); }
         }
         var now = DateTime.UtcNow;
-        if (now < _next) return;
-        _next = now.AddSeconds(Math.Max(5, Settings.CheckSeconds.Value));
-        try { Tracker.Tick(false); }
-        catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker: {e}"); }
-        try { AutoStart.Tick(); }
-        catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker auto: {e}"); }
-        try
+        if (now >= _next)
         {
-            var world = Caravans.ServerWorld();
-            var prefabs = world == null ? null : Caravans.Prefabs(world);
-            if (prefabs != null) Starter.ApplySource(world.EntityManager, prefabs);
+            _next = now.AddSeconds(Math.Max(5, Settings.CheckSeconds.Value));
+            try { Tracker.Tick(false); }
+            catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker: {e}"); }
+            try { AutoStart.Tick(); }
+            catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker auto: {e}"); }
         }
-        catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker source: {e}"); }
+        // A route that has just started waiting for a new caravan is blocked within 5 seconds, so a player
+        // standing next to it doesn't get a caravan from the game in between.
+        if (now >= _nextSource && !Starter.Paused)
+        {
+            _nextSource = now.AddSeconds(5);
+            try
+            {
+                var world = Caravans.ServerWorld();
+                var prefabs = world == null ? null : Caravans.Prefabs(world);
+                if (prefabs != null) Starter.ApplySource(world.EntityManager, prefabs);
+            }
+            catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker source: {e}"); }
+        }
     }
 }

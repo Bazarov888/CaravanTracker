@@ -80,7 +80,7 @@ public class Commands
     [Command("routemark", shortHand: "rm", usage: "<number from .cv routes>", description: "Map marker on the point of a route from .cv routes")]
     public void RouteMark(ChatCommandContext ctx, int number)
     {
-        if (!Ready(ctx, out var em, out var prefabs)) return;
+        if (!RouteCommandAllowed(ctx) || !Ready(ctx, out var em, out var prefabs)) return;
         var routes = Routes.All(em, prefabs);
         if (number < 1 || number > routes.Count) { ctx.Reply(L.T("start.bad", number)); return; }
         var r = routes[number - 1];
@@ -90,10 +90,18 @@ public class Commands
         ctx.Reply(L.T("routemark.ok", L.Route(r.Key), Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z)));
     }
 
+    // .cv routes and .cv rm show where every route is; RouteCommandsForAll = false keeps them for admins.
+    static bool RouteCommandAllowed(ChatCommandContext ctx)
+    {
+        if (Settings.RouteCommandsForAll.Value || ctx.Event.User.IsAdmin) return true;
+        ctx.Reply(L.T("routes.adminonly"));
+        return false;
+    }
+
     [Command("routes", shortHand: "r", description: "All caravan routes with level, act and state")]
     public void RoutesList(ChatCommandContext ctx)
     {
-        if (!Ready(ctx, out var em, out var prefabs)) return;
+        if (!RouteCommandAllowed(ctx) || !Ready(ctx, out var em, out var prefabs)) return;
         var routes = Routes.All(em, prefabs);
         float3 me = Caravans.PositionOf(em, ctx.Event.SenderCharacterEntity);
         ctx.Reply(L.T("routes.head", routes.Count));
@@ -269,7 +277,8 @@ public class Commands
     }
 
     static string SourceText() =>
-        L.T("source.now", Settings.ModOnly ? L.T("source.mod") : Settings.GameOnly ? L.T("source.game") : L.T("source.both"));
+        L.T("source.now", Settings.ModOnly ? L.T("source.mod") : Settings.GameOnly ? L.T("source.game") : L.T("source.both")) +
+        (Settings.ModOnly && Settings.AutoInterval.Value <= 0 ? " " + L.T("auto.modoff") : "");
 
     [Command("source", adminOnly: true, usage: "[mod|game|both]", description: "Who starts caravans: only the mod, only the game, or both")]
     public void Source(ChatCommandContext ctx, string source = "")
@@ -286,6 +295,17 @@ public class Commands
             Starter.ApplySource(em, prefabs);
         }
         ctx.Reply(SourceText());
+    }
+
+    [Command("cleanup", adminOnly: true, description: "Before removing the mod: stop starts, give routes the game's settings back, remove the mod's icons")]
+    public void Cleanup(ChatCommandContext ctx)
+    {
+        if (!Ready(ctx, out var em, out var prefabs)) return;
+        var r = Starter.Cleanup(em, prefabs);
+        Tracker.Tick(false);
+        Plugin.Logger.LogInfo($"CaravanTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
+                              "icons removed; the mod changes nothing more until the server restarts");
+        ctx.Reply(L.T("cleanup.ok", r.Runs, r.Routes, r.Units));
     }
 
     [Command("autonow", shortHand: "an", adminOnly: true, description: "Run auto-start right now, ignoring the interval")]
