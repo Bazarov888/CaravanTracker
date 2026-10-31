@@ -26,6 +26,7 @@ static partial class Starter
         public bool Auto;
         public int Act;
         public bool Reset;
+        public float3 StartPos;                                        // where the patrol stood at the start
         public readonly RunState State = new();
         public readonly Dictionary<string, object> Saved = new();    // the route's own spawner values
         public readonly HashSet<(int, int)> Awake = new();           // units and carts the mod keeps from freezing
@@ -142,39 +143,52 @@ static partial class Starter
         // A route left mid-way by an earlier caravan is put back to the first stop of its path.
         var before = Routes.StopsOf(em, patrol);
         var posBefore = Caravans.PositionOf(em, patrol);
+        run.StartPos = posBefore;
         bool reset = Settings.ResetToStart.Value && ResetToStart(em, patrol, before);
         run.Reset = reset;
 
-        // 2. Spawning without a player nearby and without waiting. Old values are saved to restore them.
+        // 2. The route's own spawner values are saved to restore them later. A route at its last stop is
+        // woken first with spawning off (RunLogic.ReadyToArm); any other one may spawn at once.
         var sp = em.GetComponentData<UnitCompositionSpawner>(patrol);
         object boxed = sp;
-        var rangeField = boxed.GetType().GetField("PlayerRange");
-        run.Saved["PlayerRange"] = rangeField?.GetValue(boxed);
-        SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.StartY));
-        foreach (var f in TimingFields)
+        run.Saved["PlayerRange"] = boxed.GetType().GetField("PlayerRange")?.GetValue(boxed);
+        foreach (var f in TimingFields) run.Saved[f] = boxed.GetType().GetField(f)?.GetValue(boxed);
+        run.State.Phase = RunLogic.FirstPhase(Routes.MoveStatus(em, patrol));
+        if (run.State.Phase == RunPhase.Armed) Arm(em, run);
+        else
         {
-            run.Saved[f] = boxed.GetType().GetField(f)?.GetValue(boxed);
-            SetField(boxed, f, 0);
+            SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.BlockedY));
+            em.SetComponentData(patrol, (UnitCompositionSpawner)boxed);
         }
-        // A respawn time the game scheduled earlier (up to 45 minutes ahead, after the previous squad was
-        // destroyed) would hold the new squad back until then, so it is cleared.
-        ResetField(boxed, "RespawnTime");
-        em.SetComponentData(patrol, (UnitCompositionSpawner)boxed);
 
         // 3. Unfreeze the patrol and keep the game from freezing it again.
         RemoveTag(em, patrol, "DisableWhenNoPlayersInRange");
         RemoveTag(em, patrol, "DisabledDueToNoPlayersInRange");
         em.SetEnabled(patrol, true);
 
-        // The squad appears at the stop the route stands at.
         var stops = Routes.StopsOf(em, patrol);
         Runs.Add(run);
         Plugin.Info($"CaravanTracker start: patrol {patrol.Index}:{patrol.Version} route {route.Key}{(auto ? $" (auto, act {act}{note})" : "")}, " +
-                              $"stop {stops?.Log}{(reset ? $" (put back from stop {before?.Log})" : "")} at ({Math.Round(posBefore.x)}, {Math.Round(posBefore.z)}), " +
-                              $"removed {units.Count} units and {carts.Count} carts");
+                    $"stop {stops?.Log}{(reset ? $" (put back from stop {before?.Log})" : "")} at ({Math.Round(posBefore.x)}, {Math.Round(posBefore.z)}), " +
+                    $"removed {units.Count} units and {carts.Count} carts" +
+                    (run.State.Phase == RunPhase.Waking ? "; at its last stop: waking it before the squad may spawn" : ""));
         bool midway = RouteLogic.NeedsReset(stops, Routes.MoveStatus(em, patrol));
         return L.T("start.ok", name, units.Count, carts.Count, Routes.StopText(stops)) +
                (reset ? L.T("start.reset", Routes.StopText(before)) : midway ? L.T("start.midway") : "");
+    }
+
+    // Spawning without a player nearby and without waiting.
+    static void Arm(EntityManager em, Run run)
+    {
+        var sp = em.GetComponentData<UnitCompositionSpawner>(run.Patrol);
+        object boxed = sp;
+        SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.StartY));
+        foreach (var f in TimingFields) SetField(boxed, f, 0);
+        // A respawn time the game scheduled earlier (up to 45 minutes ahead, after the previous squad was
+        // destroyed) would hold the new squad back until then, so it is cleared.
+        ResetField(boxed, "RespawnTime");
+        em.SetComponentData(run.Patrol, (UnitCompositionSpawner)boxed);
+        run.State.Phase = RunPhase.Armed;
     }
 
     // Puts a route that stands mid-way back to the first stop of its path, the same way the game does it
@@ -332,6 +346,18 @@ static partial class Starter
         if (!em.Exists(run.Patrol)) return true;
         var s = run.State;
         var patrolPos = Caravans.PositionOf(em, run.Patrol);
+        if (s.Phase == RunPhase.Waking)
+        {
+            var at = Routes.StopsOf(em, run.Patrol);
+            float moved = Caravans.Dist2(patrolPos, run.StartPos);
+            if (!RunLogic.ReadyToArm(s, now, Routes.MoveStatus(em, run.Patrol) == "WaitForDespawn", at?.AtStart ?? false, moved, out bool timedOut))
+                return false;
+            Arm(em, run);
+            string where = $"stop {at?.Log} at ({Math.Round(patrolPos.x)}, {Math.Round(patrolPos.z)}), {Math.Round(moved)} m from its last stop, " +
+                           $"{Math.Round((now - s.Started).TotalSeconds)} s after waking";
+            if (timedOut) Plugin.Warn($"CaravanTracker start: {Id(run)}: the route didn't go back to its first stop by itself ({where}); the squad may spawn where it stands");
+            else Plugin.Info($"CaravanTracker start: {Id(run)}: the game returned the route to its first stop ({where}); the squad may spawn");
+        }
         var units = Routes.ActiveUnits(em, run.Patrol);
         var byKey = new Dictionary<(int, int), Entity>();
         var keys = new List<(int, int)>();
@@ -346,9 +372,13 @@ static partial class Starter
             // Where the squad appeared, to see that a route put back to the start really sets out from there.
             var p = Routes.StopsOf(em, run.Patrol);
             var at = Caravans.PositionOf(em, units[0]);
-            string msg = $"CaravanTracker start: {Id(run)}: squad appeared at stop {p?.Log} at ({Math.Round(at.x)}, {Math.Round(at.z)}) " +
-                         $"{Math.Round((now - s.Started).TotalSeconds)} s after the start";
+            float fromStart = Caravans.Dist2(at, run.StartPos);
+            string msg = $"CaravanTracker start: {Id(run)}: squad appeared at stop {p?.Log} at ({Math.Round(at.x)}, {Math.Round(at.z)}), " +
+                         $"{Math.Round(fromStart)} m from where the route stood, {Math.Round((now - s.Started).TotalSeconds)} s after the start";
+            // Putting a route back to the start changes its stop number; whether the game also moves the squad
+            // there is told by the distance: next to where the route stood means the caravan walks back first.
             if (run.Reset && p != null && !p.AtStart) Plugin.Warn(msg + ", although the route was put back to the start");
+            else if (run.Reset && fromStart < RunLogic.WakeMoved) Plugin.Warn(msg + "; put back to the start, but it appeared where the route stood: it walks to the first stop first");
             else Plugin.Info(msg);
         }
         foreach (var k in step.Replacements) DestroyUtility.Destroy(em, byKey[k]);

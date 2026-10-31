@@ -232,6 +232,21 @@ static class Program
             Eq(RunEnd.Timeout, RunLogic.Outcome(s, T0.AddMinutes(91), 1, 1, timeout, maxRun, out _));
         });
 
+        Test("log 31.10 Cotton: a route at its last stop is woken before it may spawn", () =>
+        {
+            Eq(RunPhase.Waking, RunLogic.FirstPhase("WaitForDespawn"));
+            Eq(RunPhase.Armed, RunLogic.FirstPhase("WaitingForPath"));
+            Eq(RunPhase.Armed, RunLogic.FirstPhase("StoppedDueToUnit"));
+        });
+        Test("waking: spawn only after the game returned the route to its first stop", () =>
+        {
+            var s = new RunState { Started = T0, Phase = RunPhase.Waking };
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), true, false, 0, out _), "still at the end");
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 0, out _), "index reset, patrol not moved yet");
+            True(RunLogic.ReadyToArm(s, T0.AddSeconds(3), false, true, 120, out var t1) && !t1, "back at the first stop");
+            True(RunLogic.ReadyToArm(s, T0.AddSeconds(21), true, false, 0, out var t2) && t2, "gives up after 20 s");
+        });
+
         // --- Acts and caravan rules
         Test("acts by level", () =>
         {

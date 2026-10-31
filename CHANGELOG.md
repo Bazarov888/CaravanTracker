@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8
+
+- A route standing at its last stop is now woken before its squad may spawn, so the game first returns it to its first stop and the caravan sets out from there. Before, the squad appeared at the end of the route. If the route doesn't go back within 20 seconds, the squad spawns where it stands, as before, and the log says so.
+- The log tells how far from where the route stood the squad appeared. For a route put back to the start (`ResetToStart`) it warns when the squad appeared where the route stood, i.e. the caravan first walks back to the first stop.
+
 ## 1.0.7
 
 - Every decision of the mod (is a route free, which route to start, what to do with a started squad, why a caravan disappeared, what spawn range a route gets, what is announced) now lives in one place without game calls, and is covered by tests built from cases seen on the server. CI runs them before every build.

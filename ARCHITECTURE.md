@@ -60,13 +60,22 @@ Observed on a live server (game build with BepInEx 6.0.0-be.733):
   `DisableWhenNoPlayersInRange` is the tag that allows this.
 - After a squad is destroyed the game schedules `RespawnTime` up to 45 minutes ahead.
 - Killing a guard of a squad whose spawner timers are 0 makes the game send a replacement at once.
+- A squad appears where the patrol entity stands, whatever its stop index. Starting a frozen route at its last stop
+  with spawning allowed at once put the squad at the end of the route (31.10, MilitiaCotton, 0 m from the end point).
+- A route the game finishes itself while its patrol is awake goes back to its first stop, position included
+  (31.10, BanditCopper: the next start found the patrol at its first stop).
+- Routes finished while no player was near stay frozen at their last stop (`WaitForDespawn`, no units) until
+  something wakes them (dump of 30.10: most caravan patrols were in that state).
 
 Not verified, treated as assumptions:
 
 - `PlayerRange = (0, 0.001)` keeps the game from spawning (`Source = Mod`). The range is kept above 0 on purpose,
   in case 0 means "no limit". If a squad appears on a blocked route anyway, a warning goes to the log once per route.
 - Writing `CurrentBusStopIndex` / `TargetBusStopIndex` and `MovePatrolState.Status = WaitingForPath` puts a route
-  back to its first stop (`ResetToStart`). The log tells where the squad then appeared and warns if it was not the first stop.
+  back to its first stop (`ResetToStart`). Given the facts above it most likely changes only the stop number: the
+  squad appears where the route stood and walks to the first stop first. The log gives the distance and warns then.
+- Waking a route at its last stop makes the game return it to its first stop within seconds (the wake phase below).
+  If not, the start goes on after 20 s with a warning.
 - Spawner settings changed by the mod are kept in the server save. That is why `RepairLeftovers` runs on the first
   check after the server starts and why `.cv cleanup` exists.
 
@@ -84,7 +93,9 @@ All world access is on the main thread. Each step has its own try/catch, so an e
 
 1. A squad still on the route is destroyed together with its carts.
 2. With `ResetToStart`, a route standing mid-way is put back to its first stop.
-3. The spawner gets `PlayerRange = (0, 100000)`, zero respawn timers and no `RespawnTime`; the old values are saved in the run.
+3. The spawner's own values are saved in the run. A route at its last stop gets a blocked range and is woken
+   (`RunPhase.Waking`); once the game has returned it to its first stop (`RunLogic.ReadyToArm`), or after 20 s,
+   it is armed like any other route: `PlayerRange = (0, 100000)`, zero respawn timers, no `RespawnTime`.
 4. The patrol loses `DisableWhenNoPlayersInRange` and is enabled.
 
 Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRun` carries it out:
