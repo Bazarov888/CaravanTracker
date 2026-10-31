@@ -6,14 +6,33 @@ A server-side BepInEx (IL2CPP) plugin for V Rising. Nothing is installed on clie
 This page is for reviewers. It describes the game mechanics the mod relies on, which of them were seen on a
 live server and which are assumptions, and where in the code each part lives.
 
+## Layers
+
+The mod is split so that every decision can be tested without the game:
+
+1. **Reading the game** (`Routes.Snap`, `Caravans.FastScan` and friends): turns entities into plain records
+   (`RouteSnap`, `Progress`). No decisions here.
+2. **Decisions** (`Logic/`): pure functions over those records. No game types, no Unity, no BepInEx.
+   `RouteLogic` (is a route free, which one to start), `RunLogic` (a forced start second by second),
+   `GoneLogic` (why a caravan disappeared), `SpawnRange` (what range and timers a route gets),
+   `CaravanRules` (what is a caravan, what is announced), `ActLogic` (acts).
+3. **Acting on the game** (`Starter`, `StarterSource`, `StarterRepair`, `Icons`, `Tracker`): carry the decisions out.
+
+`tests/` is a console program that runs the decision layer against cases taken from the server logs
+(a caravan started mid-way, a caravan without guards, a cart left without its animal, a caravan that reached
+the end between two checks, and so on). CI runs it before the build; a failing case fails the build.
+A change of behaviour starts with a test case.
+
 ## Files
 
 | File | What it does |
 |---|---|
+| `Logic/*.cs` | The decision layer (above). |
+| `tests/` | Tests of the decision layer: `dotnet run --project tests`. |
 | `Plugin.cs` | Entry point. `Ticker` runs every server frame and schedules all work (see Timing). |
 | `Settings.cs` | BepInEx config entries. |
 | `Caravans.cs` | Finding carts, horses and loot containers in the world; reading game components by name. |
-| `Routes.cs` | Caravan routes (game patrols): list, squad, carts, progress along the path, state text. |
+| `Routes.cs` | Caravan routes (game patrols): list, squad, carts, progress along the path, `Snap`, state text. |
 | `Tracker.cs` | Every check: search, announcements in chat, map icons, log of caravans that disappeared. |
 | `Icons.cs` | Map icons on caravans (`Icons`) and on separate markers (`Proxies`). |
 | `AutoStart.cs` | Which route to start in which act, and when. |
@@ -68,13 +87,13 @@ All world access is on the main thread. Each step has its own try/catch, so an e
 3. The spawner gets `PlayerRange = (0, 100000)`, zero respawn timers and no `RespawnTime`; the old values are saved in the run.
 4. The patrol loses `DisableWhenNoPlayersInRange` and is enabled.
 
-Then once a second:
+Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRun` carries it out:
 
 - The first unit seen (not at `WaitForDespawn`) marks the squad as spawned.
 - Respawn guard: every unit that appears while the squad assembles is added to `Known`. Once a known unit is gone,
   any new unit is a replacement and is destroyed. Units above `MaxSquadSize` are destroyed too.
 - The start settings stay until the squad hasn't grown for 90 seconds (at most 4 minutes after the first unit),
-  then `Restore` puts the saved spawner values back. A blocked or zero range is restored as the game's (0, 90).
+  then `RestoreSpawner` puts the saved spawner values back. A blocked or zero range is restored as the game's (0, 90).
 - Every unit and cart of the squad loses `DisableWhenNoPlayersInRange` and is woken up if the game froze it.
 - The run ends when no unit appeared within `SpawnTimeoutMinutes` (the route is then skipped by auto-start for
   an hour), when the squad is gone, or after `MaxRunMinutes`. `Finish` restores the spawner, gives the freeze tag
@@ -97,6 +116,9 @@ settings (range above 1000, zero timers, no freeze tag) and gives them the game'
 - A caravan is a cart on the map pulled by its horse (horse exists, on the map, within 30 m), or a container with loot.
   Carts at `WaitForDespawn` and carts no horse pulls are skipped.
 - A cart is announced once, the first time it is seen on the map after the first check. Frozen carts are not announced.
+- When a caravan disappears, `GoneLogic` names the reason from what the route does now. Checks are 30 s apart,
+  so a caravan that reached the end is usually last seen one stop before it; the route back at its first stop
+  with no units tells it apart from a robbed one, whose route stays where it was robbed.
 - Icons: in `direct` mode the icon entity targets the cart; frozen carts and `proxy` mode use a marker entity
   that follows the caravan. `Icons.Sync` touches only icons the mod could have made: on a caravan, icons of the
   current kind, `OldIcons` or a named preset; off a caravan, only an icon of the current or an `OldIcons` kind

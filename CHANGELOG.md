@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.7
+
+- Every decision of the mod (is a route free, which route to start, what to do with a started squad, why a caravan disappeared, what spawn range a route gets, what is announced) now lives in one place without game calls, and is covered by tests built from cases seen on the server. CI runs them before every build.
+- The log no longer says "cart destroyed" about a caravan that reached the end of its route between two checks.
+- Every log line of the mod starts with the server time. Start lines tell how many seconds the squad took to appear and to assemble, and how many minutes the run lasted.
+- An auto-start log line tells which free routes there were (at the start, at the end, mid-way) and from which group the route was picked.
+- `.cv ss` no longer says "cart destroyed" twice.
+
 ## 1.0.6
 
 - `.cv cleanup` (admin): run it before removing the mod. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next restart the mod then changes nothing in the world.

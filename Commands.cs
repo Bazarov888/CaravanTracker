@@ -109,11 +109,10 @@ public class Commands
         {
             var r = routes[i];
             var pos = Caravans.PositionOf(em, r.Patrol);
-            int units = Routes.ActiveUnits(em, r.Patrol).Count;
             var act = Acts.OfRoute(em, prefabs, r);
             string stops = Routes.StopText(Routes.StopsOf(em, r.Patrol));
             ctx.Reply(L.T("routes.item", i + 1, L.Route(r.Key), r.Key, act.Level, L.Act(act.Act), act.Manual ? L.T("routes.manual") : "",
-                          Routes.Describe(em, r.Patrol, units), Starter.IsRunning(r.Patrol) ? L.T("routes.running") : "",
+                          Routes.Describe(em, r.Patrol), Starter.IsRunning(r.Patrol) ? L.T("routes.running") : "",
                           Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z),
                           stops.Length > 0 ? ", " + stops : "", Settings.Excluded(r.Key) ? L.T("routes.excluded") : ""));
         }
@@ -188,7 +187,7 @@ public class Commands
             list.Add((name, kv.Key.GuidHash));
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-        foreach (var i in list) Plugin.Logger.LogInfo($"CaravanTracker icon: {i.Name} {i.Guid}");
+        foreach (var i in list) Plugin.Info($"CaravanTracker icon: {i.Name} {i.Guid}");
 
         const int perPage = 15;
         int pages = Math.Max(1, (list.Count + perPage - 1) / perPage);
@@ -290,7 +289,7 @@ public class Commands
             if (v == null) { ctx.Reply("mod | game | both"); return; }
             Settings.Source.Value = v;
             Settings.Save();
-            Plugin.Logger.LogInfo($"CaravanTracker: source set to {v} by command");
+            Plugin.Info($"CaravanTracker: source set to {v} by command");
             if (v != "Game") AutoStart.Restart();
             Starter.ApplySource(em, prefabs);
         }
@@ -303,7 +302,7 @@ public class Commands
         if (!Ready(ctx, out var em, out var prefabs)) return;
         var r = Starter.Cleanup(em, prefabs);
         Tracker.Tick(false);
-        Plugin.Logger.LogInfo($"CaravanTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
+        Plugin.Info($"CaravanTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
                               "icons removed; the mod changes nothing more until the server restarts");
         ctx.Reply(L.T("cleanup.ok", r.Runs, r.Routes, r.Units));
     }
@@ -316,7 +315,7 @@ public class Commands
         if (results.Count == 0) { ctx.Reply(L.T("auto.nothing")); return; }
         foreach (var r in results)
         {
-            Plugin.Logger.LogInfo($"CaravanTracker auto (command): {r.Text}");
+            Plugin.Info($"CaravanTracker auto (command): {r.Text}");
             ctx.Reply(r.Text);
         }
     }

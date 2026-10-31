@@ -32,11 +32,11 @@ static class Caravans
     // Patrol and Stops: the cart's patrol and how far along its path it is (carts only).
     // Orphan: a cart on the map that no animal pulls any more (its animal is gone, frozen elsewhere or far away).
     public record Found(Kind Kind, string Route, Entity Entity, float3 Pos, bool Empty, bool Frozen, string Status,
-                        Entity Patrol, Routes.Progress Stops, bool Orphan);
+                        Entity Patrol, Progress Stops, bool Orphan);
     // Icon: whether to put an icon on the map. Frozen at the end of the route get none: they vanish when approached.
     // State: short English state for the server log.
     public record Caravan(string Route, Entity Target, float3 Pos, string Note, bool Frozen, bool Icon,
-                          Entity Patrol, Routes.Progress Stops, string State);
+                          Entity Patrol, Progress Stops, string State);
 
     public static World ServerWorld()
     {
@@ -107,7 +107,7 @@ static class Caravans
                 bool frozen = false;
                 string status = null;
                 Entity patrol = Entity.Null;
-                Routes.Progress stops = null;
+                Progress stops = null;
                 if (info.Kind == Kind.Cart && TryGetPatrol(em, e, out patrol))
                 {
                     stops = Routes.StopsOf(em, patrol);
@@ -163,13 +163,12 @@ static class Caravans
         return OnMap(horsePos) && Dist2(horsePos, cartPos) < 30f;
     }
 
-    // A caravan is a container with loot or a cart on the map. Skipped: empty containers, carts at the last
-    // stop of their route (WaitForDespawn: the game is about to remove them), and carts no animal pulls.
-    // Which caravans get a map icon is set by IconOnLoot and IconOnFrozen.
+    // Which found objects are caravans: CaravanRules. Which caravans get a map icon is set by IconOnLoot
+    // and IconOnFrozen.
     public static List<Caravan> Build(List<Found> found)
     {
-        var containers = found.FindAll(f => f.Kind == Kind.Container && !f.Empty && OnMap(f.Pos));
-        var carts = found.FindAll(f => f.Kind == Kind.Cart && OnMap(f.Pos));
+        var containers = found.FindAll(f => f.Kind == Kind.Container && CaravanRules.ShowContainer(f.Empty, OnMap(f.Pos)));
+        var carts = found.FindAll(f => f.Kind == Kind.Cart);
         var result = new List<Caravan>();
         bool lootIcon = Settings.IconOnLoot.Value;
         bool frozenIcon = Settings.IconOnFrozen.Value;
@@ -177,8 +176,8 @@ static class Caravans
             result.Add(new Caravan(c.Route, c.Entity, c.Pos, L.T("note.loot"), false, lootIcon, Entity.Null, null, "loot"));
         foreach (var cart in carts)
         {
-            if (containers.Exists(c => c.Route == cart.Route && Dist2(c.Pos, cart.Pos) < 15)) continue;
-            if (cart.Status == "WaitForDespawn" || cart.Orphan) continue;
+            bool lootInPlace = containers.Exists(c => c.Route == cart.Route && Dist2(c.Pos, cart.Pos) < 15);
+            if (!CaravanRules.ShowCart(OnMap(cart.Pos), lootInPlace, cart.Status, cart.Orphan)) continue;
             string stops = Routes.StopText(cart.Stops);
             string stopNote = stops.Length > 0 ? ", " + stops : "";
             string stopLog = cart.Stops != null ? $" stop {cart.Stops.Log}" : "";
@@ -203,7 +202,7 @@ static class Caravans
             var t = GameTypes.Find(typeName);
             info = (t, t == null ? default : ComponentType.ReadOnly(Il2CppType.From(t)));
             RawTypes[typeName] = info;
-            if (t == null) Plugin.Logger.LogWarning($"CaravanTracker: game type {typeName} not found");
+            if (t == null) Plugin.Warn($"CaravanTracker: game type {typeName} not found");
         }
         if (info.Type == null || e == Entity.Null || !em.Exists(e) || !em.HasComponent(e, info.Ct)) return null;
         void* ptr = em.GetComponentDataRawRO(e, info.Ct.TypeIndex);

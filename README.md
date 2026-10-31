@@ -119,6 +119,8 @@ dotnet build -c Release
 
 Reference assemblies come from NuGet (nuget.org and nuget.bepinex.dev). To build against an installed server instead: `dotnet build -c Release -p:BepDir=/path/to/server/BepInEx`.
 
+Tests of the decision logic need only the .NET 8 SDK, no game files: `dotnet run --project tests`.
+
 A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. The version is written only in `CaravanTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
 
 How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](ARCHITECTURE.md).

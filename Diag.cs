@@ -63,7 +63,7 @@ public class DiagCommands
         }
         names.Sort(StringComparer.Ordinal);
         if (!prefabs._PrefabLookupMap.TryGetName(em.GetComponentData<PrefabGUID>(best), out string prefabName)) prefabName = "?";
-        Plugin.Logger.LogInfo($"CaravanTracker comps {prefabName}: {string.Join(", ", names)}");
+        Plugin.Info($"CaravanTracker comps {prefabName}: {string.Join(", ", names)}");
         ctx.Reply($"{prefabName}, {Math.Round(bestDist)} m, components: {names.Count}. Full list in the server log.");
         for (int i = 0; i < names.Count; i += 6)
             ctx.Reply(string.Join(", ", names.GetRange(i, Math.Min(6, names.Count - i))));

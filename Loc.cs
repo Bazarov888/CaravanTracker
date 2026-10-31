@@ -94,7 +94,6 @@ static class L
         ["status.gone"] = "patrol is gone",
         ["status.item"] = "{0}{1}: {2}, {3} min since start",
         ["status.auto"] = " (auto, {0})",
-        ["status.nocart"] = ", cart destroyed, the rest goes on to the end",
         ["stop.ok"] = "Stopped: {0}. Route settings restored.",
 
         ["list.empty"] = "There are no caravans on the map right now.",
@@ -217,7 +216,6 @@ static class L
         ["status.gone"] = "патруль пропал",
         ["status.item"] = "«{0}»{1}: {2}, {3} мин с запуска",
         ["status.auto"] = " (авто, {0})",
-        ["status.nocart"] = ", повозка разбита, остаток едет до конца",
         ["stop.ok"] = "Остановлено запусков: {0}. Настройки маршрутов возвращены.",
 
         ["list.empty"] = "Сейчас на карте нет ни одного каравана.",

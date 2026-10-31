@@ -15,10 +15,22 @@ namespace CaravanTracker;
 // Giving routes the game's normal settings back: after a crash, and before the mod is removed (.cv cleanup).
 static partial class Starter
 {
-    static bool IsZero(object o)
+    // A numeric spawner field as double; NaN if it isn't a number.
+    static double Num(object o)
     {
-        try { return o is IConvertible c && Convert.ToDouble(c) == 0; }
-        catch { return false; }
+        try { return o is IConvertible c ? Convert.ToDouble(c) : double.NaN; }
+        catch { return double.NaN; }
+    }
+
+    static bool TimersZero(object boxed) =>
+        SpawnRange.TimersZero(Num(Caravans.Field(boxed, "MinRespawnTime")), Num(Caravans.Field(boxed, "MaxRespawnTime")));
+
+    static void NormalTimers(object boxed)
+    {
+        SetField(boxed, "RespawnTimeModifier", 1);
+        SetField(boxed, "MinRespawnTime", SpawnRange.NormalMinRespawn);
+        SetField(boxed, "MaxRespawnTime", SpawnRange.NormalMaxRespawn);
+        ResetField(boxed, "RespawnTime");
     }
 
     // After a crash or restart in the middle of a start, a route may keep the start settings: no freeze
@@ -40,26 +52,21 @@ static partial class Starter
                 foreach (var e in all)
                     if (!em.HasComponent(e, tag.Value)) { AddTag(em, e, "DisableWhenNoPlayersInRange"); fixedUnits++; }
                 if (fixedUnits > 0)
-                    Plugin.Logger.LogInfo($"CaravanTracker: route {r.Key}: {fixedUnits} units and carts left without freezing, restored");
+                    Plugin.Info($"CaravanTracker: route {r.Key}: {fixedUnits} units and carts left without freezing, restored");
             }
             var sp = em.GetComponentData<UnitCompositionSpawner>(r.Patrol);
             object boxed = sp;
-            bool farRange = Caravans.Field(boxed, "PlayerRange") is float2 range && range.y > 1000f;
-            bool zeroTimers = IsZero(Caravans.Field(boxed, "MinRespawnTime")) && IsZero(Caravans.Field(boxed, "MaxRespawnTime"));
+            bool farRange = Caravans.Field(boxed, "PlayerRange") is float2 range && SpawnRange.IsStart(range.x, range.y);
+            bool zeroTimers = TimersZero(boxed);
             bool noTag = tag.HasValue && !em.HasComponent(r.Patrol, tag.Value);
             if (!farRange && !zeroTimers && !noTag) continue;
-            if (farRange) SetField(boxed, "PlayerRange", new float2(0f, 90f));
-            if (zeroTimers)
-            {
-                SetField(boxed, "RespawnTimeModifier", 1);
-                SetField(boxed, "MinRespawnTime", 1000);
-                SetField(boxed, "MaxRespawnTime", 2700);
-            }
-            ResetField(boxed, "RespawnTime");
+            if (farRange) SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.NormalY));
+            if (zeroTimers) NormalTimers(boxed);
+            else ResetField(boxed, "RespawnTime");
             em.SetComponentData(r.Patrol, (UnitCompositionSpawner)boxed);
             AddTag(em, r.Patrol, "DisableWhenNoPlayersInRange");
             repaired++;
-            Plugin.Logger.LogInfo($"CaravanTracker: route {r.Key} patrol {r.Patrol.Index}:{r.Patrol.Version} had start settings left (range {farRange}, timers {zeroTimers}, no freeze {noTag}), restored");
+            Plugin.Info($"CaravanTracker: route {r.Key} patrol {r.Patrol.Index}:{r.Patrol.Version} had start settings left (range {farRange}, timers {zeroTimers}, no freeze {noTag}), restored");
         }
         return repaired;
     }
@@ -82,17 +89,14 @@ static partial class Starter
             var sp = em.GetComponentData<UnitCompositionSpawner>(r.Patrol);
             object boxed = sp;
             bool changed = false;
-            if (Caravans.Field(boxed, "PlayerRange") is float2 range && (IsBlockedRange(range) || range.y == 0f || range.y > 1000f))
+            if (Caravans.Field(boxed, "PlayerRange") is float2 range && SpawnRange.CleanupOpens(range.x, range.y))
             {
-                SetField(boxed, "PlayerRange", NormalRange);
+                SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.NormalY));
                 changed = true;
             }
-            if (IsZero(Caravans.Field(boxed, "MinRespawnTime")) && IsZero(Caravans.Field(boxed, "MaxRespawnTime")))
+            if (TimersZero(boxed))
             {
-                SetField(boxed, "RespawnTimeModifier", 1);
-                SetField(boxed, "MinRespawnTime", 1000);
-                SetField(boxed, "MaxRespawnTime", 2700);
-                ResetField(boxed, "RespawnTime");
+                NormalTimers(boxed);
                 changed = true;
             }
             if (changed)

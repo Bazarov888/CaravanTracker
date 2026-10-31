@@ -18,7 +18,7 @@ static class Announcer
     {
         int act = 0;
         try { act = Acts.OfRouteKey(em, prefabs, route); }
-        catch (Exception e) { Plugin.Logger.LogWarning($"CaravanTracker: act of route {route} unknown: {e.Message}"); }
+        catch (Exception e) { Plugin.Warn($"CaravanTracker: act of route {route} unknown: {e.Message}"); }
         bool sameAct = Settings.AnnounceSameAct && act > 0;
         bool nearby = Settings.AnnounceNearby;
         float radius = Math.Max(100, Settings.AnnounceRadius.Value);
@@ -141,14 +141,14 @@ static class Tracker
                 if (f.Kind == Kind.Horse || fast.Contains((f.Entity.Index, f.Entity.Version))) continue;
                 _lastMissed++;
                 found.Add(f);
-                Plugin.Logger.LogWarning($"CaravanTracker: fast search missed {f.Kind} on route {f.Route}");
+                Plugin.Warn($"CaravanTracker: fast search missed {f.Kind} on route {f.Route}");
             }
         }
 
         var built = Caravans.Build(found);
         if (_primed) LogGone(em, _caravans, built);
         else if (built.Count > 0)
-            Plugin.Logger.LogInfo($"CaravanTracker: on the map at start: " +
+            Plugin.Info($"CaravanTracker: on the map at start: " +
                                   string.Join("; ", built.ConvertAll(c => $"{c.Route} {c.State} at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)})")));
         _caravans = built;
 
@@ -156,7 +156,7 @@ static class Tracker
         if (!_primed)
         {
             try { Starter.RepairLeftovers(em, prefabs); }
-            catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker: repair of routes failed: {e}"); }
+            catch (Exception e) { Plugin.Error($"CaravanTracker: repair of routes failed: {e}"); }
         }
 
         // Announcement: once per cart, when it is first seen moving on the map (the game spawned it next to
@@ -170,14 +170,17 @@ static class Tracker
         {
             if (paused || f.Kind != Kind.Cart || !Caravans.OnMap(f.Pos)) continue;
             var key = (f.Entity.Index, f.Entity.Version);
-            if (!_primed || _announced.Contains(key)) { announced.Add(key); continue; }
-            if (f.Frozen || f.Orphan) continue;
-            // A cart at the last stop of its route isn't setting out: the game is about to remove it.
-            if (f.Status == "WaitForDespawn") continue;
+            bool before = _announced.Contains(key);
+            if (!CaravanRules.Announce(_primed, before, true, f.Frozen, f.Orphan, f.Status))
+            {
+                // Carts already out at the server start, and carts announced before, are remembered.
+                if (!_primed || before) announced.Add(key);
+                continue;
+            }
             announced.Add(key);
             bool byMod = f.Patrol != Entity.Null && Starter.IsRunning(f.Patrol);
             string stops = f.Stops != null ? $", stop {f.Stops.Log}" : "";
-            Plugin.Logger.LogInfo($"CaravanTracker: caravan {f.Route} set out at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}){stops}{(byMod ? ", started by the mod" : "")}");
+            Plugin.Info($"CaravanTracker: caravan {f.Route} set out at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}){stops}{(byMod ? ", started by the mod" : "")}");
             if (Settings.Announce.Value && (byMod || Settings.AnnounceVanilla.Value))
                 Announcer.CaravanStarted(em, prefabs, f.Route, f.Entity, f.Pos);
         }
@@ -225,21 +228,11 @@ static class Tracker
         {
             if (still.Contains((c.Target.Index, c.Target.Version))) continue;
             bool exists = em.Exists(c.Target);
-            bool patrolLeft = c.Patrol != Entity.Null && em.Exists(c.Patrol);
-            bool atEnd = patrolLeft && Routes.MoveStatus(em, c.Patrol) == "WaitForDespawn";
-            string why = c.State == "loot"
-                ? (exists ? "looted" : "container removed by the game")
-                : !exists ? "cart destroyed or removed by the game"
-                : atEnd ? "reached the last stop, the game removes it there"
-                : Caravans.OnMap(Caravans.PositionOf(em, c.Target)) ? "cart left without its animal"
-                : "cart parked off the map";
-            string route = "";
-            if (patrolLeft)
-            {
-                var p = Routes.StopsOf(em, c.Patrol);
-                route = $"; route now {Routes.MoveStatus(em, c.Patrol)}, units {Routes.ActiveUnits(em, c.Patrol).Count}, stop {p?.Log}";
-            }
-            Plugin.Logger.LogInfo($"CaravanTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {why}{route}");
+            bool onMap = exists && Caravans.OnMap(Caravans.PositionOf(em, c.Target));
+            var route = c.Patrol != Entity.Null && em.Exists(c.Patrol) ? Routes.Snap(em, c.Patrol, c.Route) : null;
+            var why = GoneLogic.Reason(c.State == "loot", c.Stops, exists, onMap, route);
+            string now = route == null ? "" : $"; route now {route.Move}, units {route.Units}, stop {route.Stops?.Log}";
+            Plugin.Info($"CaravanTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{now}");
         }
     }
 }

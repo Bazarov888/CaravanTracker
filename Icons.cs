@@ -99,7 +99,7 @@ static class Icons
         int created = 0;
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(iconGuid), out Entity iconPrefab))
         {
-            Plugin.Logger.LogWarning($"CaravanTracker: icon prefab {iconGuid} not found, no icons created");
+            Plugin.Warn($"CaravanTracker: icon prefab {iconGuid} not found, no icons created");
             return (0, removed, globalized);
         }
         foreach (var kv in wanted)
@@ -244,7 +244,7 @@ static class Proxies
 
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(ProxyGuid), out Entity proxyPrefab))
         {
-            Plugin.Logger.LogWarning($"CaravanTracker: proxy prefab {ProxyGuid} not found, no proxy icons created");
+            Plugin.Warn($"CaravanTracker: proxy prefab {ProxyGuid} not found, no proxy icons created");
             return (0, removed, globalized);
         }
         foreach (var kv in wanted)
@@ -255,7 +255,7 @@ static class Proxies
             if (!em.HasBuffer<AttachMapIconsToEntity>(proxy))
             {
                 em.DestroyEntity(proxy);
-                Plugin.Logger.LogWarning("CaravanTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
+                Plugin.Warn("CaravanTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
                 break;
             }
             SetPos(em, proxy, c.Pos);
@@ -286,6 +286,6 @@ static class MapIconSpawnPatch
     {
         if (!Proxies.HasPending) return;
         try { Proxies.GlobalizeNewIcons(); }
-        catch (Exception e) { Plugin.Logger.LogError($"CaravanTracker: {e}"); }
+        catch (Exception e) { Plugin.Error($"CaravanTracker: {e}"); }
     }
 }

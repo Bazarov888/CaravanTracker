@@ -11,7 +11,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: |
+            6.0.x
+            8.0.x
+      - name: Tests of the decision logic
+        run: dotnet run --project tests -c Release
       - name: Build
         run: dotnet build -c Release
       - name: Thunderstore package

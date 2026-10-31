@@ -92,7 +92,7 @@ static class Acts
 
     public static string Roman(int act) => act switch { 1 => "I", 2 => "II", 3 => "III", 4 => "IV", _ => "?" };
 
-    public static int OfLevel(int level) => level <= 0 ? 0 : level < 40 ? 1 : level < 60 ? 2 : level < 66 ? 3 : 4;
+    public static int OfLevel(int level) => ActLogic.OfLevel(level);
 
     // Unit level from its prefab (UnitLevel), 0 if not found.
     public static int LevelOf(EntityManager em, PrefabCollectionSystem prefabs, PrefabGUID guid)
@@ -203,12 +203,7 @@ static class Acts
     }
 
     // The act whose caravans a player gets: their own act, or the nearest lower act with routes. 0 if none.
-    public static int Served(int playerAct, HashSet<int> actsWithRoutes)
-    {
-        int act = playerAct;
-        while (act >= 1 && !actsWithRoutes.Contains(act)) act--;
-        return Math.Max(0, act);
-    }
+    public static int Served(int playerAct, HashSet<int> actsWithRoutes) => ActLogic.Served(playerAct, actsWithRoutes);
 
     static readonly Dictionary<string, int> LevelCache = new();
 

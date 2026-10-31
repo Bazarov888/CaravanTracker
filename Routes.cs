@@ -118,17 +118,6 @@ static class Routes
     public static string MoveStatus(EntityManager em, Entity patrol) =>
         Caravans.Has<MovePatrolState>(em, patrol) ? em.GetComponentData<MovePatrolState>(patrol).Status.ToString() : "?";
 
-    // Where a patrol is on its path. Index: the stop it stands at or heads to, from 0 (the first stop)
-    // to Count - 1 (the last one, where the game removes the caravan). Count: stops of the path, 0 if unknown.
-    // Number: the same stop counted from 1, as shown to players.
-    public record Progress(int Index, int Start, int Count)
-    {
-        public bool AtStart => Index == Start;
-        public int Number => Index + 1;
-        public int Left => Count > 0 ? Math.Max(0, Count - 1 - Index) : 0;
-        public string Log => Count > 0 ? $"{Number}/{Count}" : $"{Number}/?";
-    }
-
     public static Progress StopsOf(EntityManager em, Entity patrol)
     {
         if (patrol == Entity.Null || !em.Exists(patrol) || !Caravans.Has<GlobalPatrolState>(em, patrol)) return null;
@@ -158,7 +147,7 @@ static class Routes
             {
                 _stopType = GameTypes.Find("PatrolBusStopNode");
                 _stopTypeLooked = true;
-                if (_stopType == null) Plugin.Logger.LogWarning("CaravanTracker: game type PatrolBusStopNode not found, stop counts unknown");
+                if (_stopType == null) Plugin.Warn("CaravanTracker: game type PatrolBusStopNode not found, stop counts unknown");
             }
             if (_stopType != null && em.HasComponent(patrol, ComponentType.ReadOnly(Il2CppType.From(_stopType))))
             {
@@ -175,22 +164,39 @@ static class Routes
         catch (Exception e)
         {
             var inner = e.InnerException ?? e;
-            Plugin.Logger.LogWarning($"CaravanTracker: stops of patrol {patrol.Index}:{patrol.Version} unknown: {inner.Message}");
+            Plugin.Warn($"CaravanTracker: stops of patrol {patrol.Index}:{patrol.Version} unknown: {inner.Message}");
         }
         StopCounts[key] = n;
         return n;
     }
 
-    public static string Describe(EntityManager em, Entity patrol, int units)
+    // Everything decisions about a route need (RouteLogic), read from the game in one place.
+    public static RouteSnap Snap(EntityManager em, Entity patrol, string key)
     {
-        string spawner = em.GetComponentData<UnitCompositionSpawner>(patrol).SpawnerState.ToString();
-        string move = MoveStatus(em, patrol);
-        if (move == "WaitForDespawn")
-            return units > 0 ? L.T("route.state.endguarded") : L.T("route.state.endempty");
-        // The cart was destroyed: the horse (and maybe some guards) walk on to the end of the route.
-        if (units > 0 && CartsOf(em, ActiveUnits(em, patrol)).Count == 0) return L.T("route.state.nocart");
-        if (spawner == "WaitingForSpawn") return L.T("route.state.waiting");
-        if (units > 0 && move == "Moving") return L.T("route.state.moving");
-        return L.T("route.state.other", spawner, move, units);
+        var units = ActiveUnits(em, patrol);
+        int onMap = 0;
+        foreach (var u in units) if (Caravans.OnMap(Caravans.PositionOf(em, u))) onMap++;
+        int carts = units.Count > 0 ? CartsOf(em, units).Count : 0;
+        string spawner = Caravans.Has<UnitCompositionSpawner>(em, patrol)
+            ? em.GetComponentData<UnitCompositionSpawner>(patrol).SpawnerState.ToString() : "?";
+        return new RouteSnap(key, MoveStatus(em, patrol), spawner, StopsOf(em, patrol), units.Count, onMap, carts,
+                             Starter.IsRunning(patrol), key != null && Starter.RecentlyFailed(key));
+    }
+
+    public static RouteSnap Snap(EntityManager em, Route r) => Snap(em, r.Patrol, r.Key);
+
+    // State of a route for .cv routes and .cv ss.
+    public static string Describe(EntityManager em, Entity patrol)
+    {
+        var s = Snap(em, patrol, null);
+        return RouteLogic.Classify(s with { Running = false, FailedRecently = false }) switch
+        {
+            RouteState.AtEnd => s.Units > 0 ? L.T("route.state.endguarded") : L.T("route.state.endempty"),
+            // The cart was destroyed: the horse (and maybe some guards) walk on to the end of the route.
+            RouteState.CartLost or RouteState.FrozenLeftover => L.T("route.state.nocart"),
+            _ when s.WaitingForSpawn => L.T("route.state.waiting"),
+            _ when s.Units > 0 && s.Move == "Moving" => L.T("route.state.moving"),
+            _ => L.T("route.state.other", s.Spawner, s.Move, s.Units),
+        };
     }
 }
