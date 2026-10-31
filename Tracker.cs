@@ -231,8 +231,8 @@ static class Tracker
             bool onMap = exists && Caravans.OnMap(Caravans.PositionOf(em, c.Target));
             var route = c.Patrol != Entity.Null && em.Exists(c.Patrol) ? Routes.Snap(em, c.Patrol, c.Route) : null;
             var why = GoneLogic.Reason(c.State == "loot", c.Stops, exists, onMap, route);
-            string now = route == null ? "" : $"; route now {route.Move}, units {route.Units}, stop {route.Stops?.Log}";
-            Plugin.Info($"CaravanTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{now}");
+            string routeNow = route == null ? "" : $"; route now {route.Move}, units {route.Units}, stop {route.Stops?.Log}";
+            Plugin.Info($"CaravanTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{routeNow}");
         }
     }
 }
