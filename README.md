@@ -30,6 +30,7 @@ For everyone:
 | `.cv r` | All routes with level, act and state |
 | `.cv a` | Your act and the routes of that act |
 | `.cv rm <number>` | Map marker on the point of a route from `.cv r` |
+| `.cv lang <en or ru>` | Your language of the mod's messages; other players keep theirs |
 
 `.cv r` and `.cv rm` show where every route is. With `RouteCommandsForAll = false` they are for admins only.
 
@@ -46,7 +47,6 @@ For admins:
 | `.cv icon <name or number>` | Map icon: `merchant`, `unknown`, `vblood` or a number from `.cv icons` |
 | `.cv icons [filter] [page]` | Map icons of the game with their numbers |
 | `.cv mode <direct or proxy>` | Where the icon hangs: on the caravan or on a separate marker |
-| `.cv lang <en or ru>` | Language of chat messages |
 | `.cv stats`, `.cv refresh` | Results of the last check, or a full check right now |
 | `.cv cleanup` | Before removing the mod: give routes the game's own settings back and remove the mod's icons (see Uninstalling) |
 
@@ -58,7 +58,7 @@ For admins:
 
 | Section | Setting | Default | Meaning |
 |---|---|---|---|
-| General | Language | `en` | `en` or `ru` |
+| General | Language | `en` | `en` or `ru`: default for players who haven't picked their own with `.cv lang` |
 | Map | Icon | `merchant` | `merchant`, `unknown`, `vblood` or a PrefabGUID number |
 | Map | GlobalIcons | `true` | Icons visible to everyone on the whole map |
 | Map | IconMode | `direct` | `direct` or `proxy` |
@@ -69,6 +69,7 @@ For admins:
 | Chat | AnnounceRadius | `1500` | Meters for `Nearby` |
 | Chat | AnnounceVanilla | `true` | Also announce caravans the game spawned by itself; `false` = only the mod's |
 | Chat | RouteCommandsForAll | `true` | `.cv r` and `.cv rm` for every player; `false` = admins only |
+| Chat | Welcome | `true` | Two lines to a player who has just come into the world: what the mod does and how to pick the language |
 | Chat | TitleColor, TextColor, CommandColor | gold, white, green | Announcement colors |
 | AutoStart | Source | `Both` | `Mod` = only the mod starts caravans, the game no longer spawns them near players; `Game` = only the game, auto-start off; `Both` |
 | AutoStart | IntervalMinutes | `20` | Minimum time between two auto-starts in the same act, `0` = off. With `Source = Mod` and `0` there are no caravans at all; the log warns about it |
@@ -142,7 +143,7 @@ License: MIT.
 
 Серверный мод для V Rising. Караваны видны на карте всем игрокам, при выходе каравана в чат приходит анонс с расстоянием и направлением, а мод сам запускает караваны в актах, где есть игроки онлайн. Игрокам ничего ставить не нужно.
 
-Русский язык сообщений включается в конфиге (`Language = ru`) или командой `.cv lang ru`.
+Язык у каждого игрока свой: `.cv lang ru` или `.cv lang en`. Кто не выбрал, получает язык из конфига (`Language`). Новому игроку при входе приходят две строки, на английском и русском: что делает мод и как выбрать язык.
 
 Автозапуск: в каждом акте, где есть игрок онлайн, новый караван выходит не чаще раза в `IntervalMinutes` минут, пока в акте едет меньше `MaxPerAct`, а на сервере меньше `MaxTotal` караванов мода. Сначала берутся маршруты, которые стоят в начале или в конце пути, причём не тот, что мод запускал последним. Акт игрока считается по выпитым V Blood, акт маршрута по уровню охраны. Проверить привязку маршрутов можно командой `.cv r`, поправить вручную через `RouteActs`, убрать маршрут из автозапуска через `ExcludedRoutes`.
 

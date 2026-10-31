@@ -14,6 +14,7 @@ public class Plugin : BasePlugin
 {
     internal static ManualLogSource Logger;
     Harmony _harmony;
+    LanguageMiddleware _language;
 
     // The BepInEx log has no time, so every line of the mod starts with the server's time: then the log
     // shows how long a squad took to appear, to assemble, to drive its route.
@@ -35,6 +36,7 @@ public class Plugin : BasePlugin
         try { _harmony = Harmony.CreateAndPatchAll(typeof(MapIconSpawnPatch), MyPluginInfo.PLUGIN_GUID); }
         catch (Exception e) { Log.LogError($"CaravanTracker: Harmony patch failed, proxy icons become global only on the next check: {e}"); }
         AddComponent<Ticker>();
+        CommandRegistry.Middlewares.Add(_language = new LanguageMiddleware());
         CommandRegistry.RegisterCommandType(typeof(Commands));
         if (Settings.EnableDiagnostics.Value) CommandRegistry.RegisterCommandType(typeof(DiagCommands));
         Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} loaded, source {Settings.Source.Value}, auto-start every {Settings.AutoInterval.Value} min");
@@ -45,6 +47,7 @@ public class Plugin : BasePlugin
     public override bool Unload()
     {
         CommandRegistry.UnregisterAssembly();
+        if (_language != null) CommandRegistry.Middlewares.Remove(_language);
         _harmony?.UnpatchSelf();
         return true;
     }
@@ -60,6 +63,9 @@ public class Ticker : UnityEngine.MonoBehaviour
 
     public void Update()
     {
+        // Background work speaks the server's default language (a command that failed midway could leave
+        // its player's language set).
+        L.UseDefault();
         if (Starter.Any)
         {
             try

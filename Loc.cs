@@ -3,13 +3,42 @@ using System.Collections.Generic;
 
 namespace CaravanTracker;
 
-// Chat texts in English and Russian. The language is set by General.Language in the config.
-// Placeholders {0}, {1}... are filled in the order the code passes the values.
+// Chat texts in English and Russian. Each player can pick their own language (.cv lang, see Languages);
+// General.Language in the config is the default. Placeholders {0}, {1}... are filled in the order the code
+// passes the values.
 static class L
 {
+    // Language of the player being answered now (set around each command and each personal message);
+    // null = the server default.
+    static string _lang;
+
+    public static bool Known(string lang) => lang == "en" || lang == "ru";
+    static bool Russian => (_lang ?? (Settings.Russian ? "ru" : "en")) == "ru";
+
+    public static void Use(ulong platformId) => _lang = Languages.Of(platformId);
+    public static void Use(string lang) => _lang = Known(lang) ? lang : null;
+    public static void UseDefault() => _lang = null;
+    public static string Current => _lang;
+
+    // A text in a given language, whatever language is in use now.
+    public static string In(string lang, string key, params object[] args)
+    {
+        var saved = _lang;
+        try { Use(lang); return T(key, args); }
+        finally { _lang = saved; }
+    }
+
+    // A text in the language of one player, whatever language is in use now.
+    public static string For(ulong platformId, string key, params object[] args)
+    {
+        var saved = _lang;
+        try { Use(platformId); return T(key, args); }
+        finally { _lang = saved; }
+    }
+
     public static string T(string key, params object[] args)
     {
-        var table = Settings.Russian ? Ru : En;
+        var table = Russian ? Ru : En;
         if (!table.TryGetValue(key, out var text) && !En.TryGetValue(key, out text)) return key;
         if (args == null || args.Length == 0) return text;
         try { return string.Format(text, args); }
@@ -20,7 +49,7 @@ static class L
     public static string Route(string key)
     {
         if (string.IsNullOrEmpty(key)) return "?";
-        var table = Settings.Russian ? Ru : En;
+        var table = Russian ? Ru : En;
         return table.TryGetValue("route." + key, out var t) || En.TryGetValue("route." + key, out t) ? t : key;
     }
 
@@ -113,8 +142,8 @@ static class L
 
         ["act.none"] = "Your act: I. No V Blood drunk yet.",
         ["act.mine"] = "Your act: {0}. V Blood drunk: {1}, the highest: {2} (lvl {3}).",
-        ["act.online"] = "Online: {0}.",
-        ["act.routes"] = "Routes of {0}: {1}.",
+        ["act.online"] = "Online: {0}",
+        ["act.routes"] = "Routes of {0}: {1}",
         ["act.noroutes"] = "No routes in {0}, auto-start uses the nearest lower act.",
 
         ["icon.bad"] = "{0} is not an icon. Use a name ({1}) or a number from .cv icons",
@@ -122,7 +151,8 @@ static class L
         ["icon.ok"] = "Caravan icon: {0} ({1}).",
         ["icons.head"] = "Icons: {0}, page {1}/{2}. All of them are written to the server log.",
         ["mode.bad"] = "Mode: direct or proxy.",
-        ["lang.ok"] = "Language: English.",
+        ["lang.ok"] = "Language: English. Only for you; other players keep theirs.",
+        ["welcome"] = "This server shows every caravan on the map and starts new caravans in your act. Caravans: .cv l. Language: .cv lang en / .cv lang ru",
 
         ["auto.off"] = "Auto-start is off. Turn it on: .cv auto <minutes>",
         ["auto.status"] = "Auto-start: every {0} min per act, {1}, at most {2} per act and {3} in total. On the road now: {4}.",
@@ -235,8 +265,8 @@ static class L
 
         ["act.none"] = "Твой акт: I. Выпитых V Blood пока нет.",
         ["act.mine"] = "Твой {0}. Выпито V Blood: {1}, старший: {2} (ур. {3}).",
-        ["act.online"] = "Онлайн: {0}.",
-        ["act.routes"] = "Маршруты ({0}): {1}.",
+        ["act.online"] = "Онлайн: {0}",
+        ["act.routes"] = "Маршруты ({0}): {1}",
         ["act.noroutes"] = "Маршрутов нет ({0}), автозапуск возьмёт ближайший младший акт.",
 
         ["icon.bad"] = "{0} - не иконка. Нужно имя ({1}) или номер из .cv icons",
@@ -244,7 +274,8 @@ static class L
         ["icon.ok"] = "Иконка караванов: {0} ({1}).",
         ["icons.head"] = "Иконок: {0}, страница {1}/{2}. Все записаны в лог сервера.",
         ["mode.bad"] = "Режим: direct или proxy.",
-        ["lang.ok"] = "Язык: русский.",
+        ["lang.ok"] = "Язык: русский. Только для тебя, у остальных игроков свой.",
+        ["welcome"] = "На этом сервере все караваны видны на карте, а мод сам запускает новые в твоём акте. Караваны: .cv l. Язык: .cv lang ru / .cv lang en",
 
         ["auto.off"] = "Автозапуск выключен. Включить: .cv auto <минуты>",
         ["auto.status"] = "Автозапуск: раз в {0} мин в каждом акте, {1}, не больше {2} на акт и {3} всего. Сейчас едут: {4}.",

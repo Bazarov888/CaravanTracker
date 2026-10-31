@@ -290,9 +290,9 @@ static partial class Starter
         return n;
     }
 
-    public static string Status(EntityManager em)
+    public static List<string> Status(EntityManager em)
     {
-        if (Runs.Count == 0) return L.T("status.none");
+        if (Runs.Count == 0) return new List<string> { L.T("status.none") };
         var parts = new List<string>();
         foreach (var run in Runs)
         {
@@ -302,7 +302,7 @@ static partial class Starter
             parts.Add(L.T("status.item", L.Route(run.Route), run.Auto ? L.T("status.auto", L.Act(run.Act)) : "", state,
                           Math.Round((DateTime.UtcNow - run.State.Started).TotalMinutes)));
         }
-        return string.Join("; ", parts);
+        return ChatLines.Pack(parts, "; ");
     }
 
     // Every frame while there are runs; the work itself is done once a second.
@@ -364,12 +364,11 @@ static partial class Starter
         var keys = new List<(int, int)>();
         foreach (var u in units) { byKey[Key(u)] = u; keys.Add(Key(u)); }
         string move = Routes.MoveStatus(em, run.Patrol);
-        string name = L.Route(run.Route);
 
         var step = RunLogic.Squad(s, now, move == "WaitForDespawn", keys, maxSquad);
         if (step.JustSpawned)
         {
-            Chat.Send(em, run.User, L.T("start.spawned", name));
+            Chat.Send(em, run.User, () => L.T("start.spawned", L.Route(run.Route)));
             // Where the squad appeared, to see that a route put back to the start really sets out from there.
             var p = Routes.StopsOf(em, run.Patrol);
             var at = Caravans.PositionOf(em, units[0]);
@@ -427,11 +426,11 @@ static partial class Starter
             case RunEnd.NoSpawn:
                 Finish(em, run, $"no units after {spawnTimeout} minutes; auto-start skips this route for an hour");
                 FailedAt[run.Route] = now;
-                Chat.Send(em, run.User, L.T("start.failed", name, spawnTimeout));
+                Chat.Send(em, run.User, () => L.T("start.failed", L.Route(run.Route), spawnTimeout));
                 return true;
             case RunEnd.Done:
                 Finish(em, run, "route completed or caravan destroyed");
-                Chat.Send(em, run.User, L.T("start.done", name));
+                Chat.Send(em, run.User, () => L.T("start.done", L.Route(run.Route)));
                 return true;
             case RunEnd.Timeout:
                 Finish(em, run, $"timeout {maxRun} minutes");

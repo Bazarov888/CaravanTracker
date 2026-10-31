@@ -132,7 +132,7 @@ public class Commands
         {
             var parts = new List<string>();
             foreach (var p in online) parts.Add($"{p.Name} - {L.Act(p.Act.Act)}");
-            ctx.Reply(L.T("act.online", string.Join(", ", parts)));
+            foreach (var line in ChatLines.Pack(parts, ", ", L.T("act.online", ""))) ctx.Reply(line);
         }
 
         var names = new List<string>();
@@ -141,9 +141,8 @@ public class Commands
             string n = L.Route(r.Key);
             if (Acts.OfRoute(em, prefabs, r).Act == mine.Act && !names.Contains(n)) names.Add(n);
         }
-        ctx.Reply(names.Count > 0
-            ? L.T("act.routes", L.Act(mine.Act), string.Join(", ", names))
-            : L.T("act.noroutes", L.Act(mine.Act)));
+        if (names.Count == 0) ctx.Reply(L.T("act.noroutes", L.Act(mine.Act)));
+        else foreach (var line in ChatLines.Pack(names, ", ", L.T("act.routes", L.Act(mine.Act), ""))) ctx.Reply(line);
     }
 
     // ---- admin: map icons ----
@@ -218,13 +217,14 @@ public class Commands
         ctx.Reply(Tracker.LastStats);
     }
 
-    [Command("lang", adminOnly: true, usage: "<en|ru>", description: "Language of chat messages")]
+    // Personal: every player picks their own language. The default for players who haven't is General.Language.
+    [Command("lang", usage: "<en|ru>", description: "Your language of the mod's chat messages")]
     public void Lang(ChatCommandContext ctx, string lang)
     {
-        lang = lang.ToLowerInvariant();
-        if (lang != "en" && lang != "ru") { ctx.Reply("en | ru"); return; }
-        Settings.Language.Value = lang;
-        Settings.Save();
+        lang = lang.Trim().ToLowerInvariant();
+        if (!L.Known(lang)) { ctx.Reply("en | ru"); return; }
+        Languages.Set(ctx.Event.User.PlatformId, lang);
+        L.Use(lang);
         ctx.Reply(L.T("lang.ok"));
     }
 
@@ -243,7 +243,7 @@ public class Commands
     public void StartStatus(ChatCommandContext ctx)
     {
         if (!Ready(ctx, out var em, out _)) return;
-        ctx.Reply(Starter.Status(em));
+        foreach (var line in Starter.Status(em)) ctx.Reply(line);
     }
 
     [Command("stop", adminOnly: true, description: "Stop tracking all started caravans and restore normal route settings")]
@@ -271,8 +271,9 @@ public class Commands
         var parts = new List<string>();
         for (int act = 1; act <= 4; act++)
             parts.Add(L.T("auto.actline", L.Act(act), Starter.AutoCount(act), Math.Ceiling(AutoStart.MinutesLeft(act))));
-        ctx.Reply(string.Join("; ", parts));
-        if (AutoStart.LastResults.Count > 0) ctx.Reply(L.T("auto.last", string.Join("; ", AutoStart.LastResults)));
+        foreach (var line in ChatLines.Pack(parts, "; ")) ctx.Reply(line);
+        if (AutoStart.LastResults.Count > 0)
+            foreach (var line in ChatLines.Pack(AutoStart.LastResults, "; ", L.T("auto.last", ""))) ctx.Reply(line);
     }
 
     static string SourceText() =>

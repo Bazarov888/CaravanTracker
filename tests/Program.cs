@@ -306,6 +306,34 @@ static class Program
             True(!CaravanRules.Announce(true, false, true, false, false, "WaitForDespawn"), "at the end");
         });
 
+        // --- Chat
+        Test("long Russian lists are packed into lines that fit 512 bytes", () =>
+        {
+            var items = new List<string>();
+            for (int i = 0; i < 6; i++) items.Add($"«ополчение: хлопок» (авто, акт II): едет к концу маршрута, остановка {i + 1} из 4, {i * 3} мин с запуска");
+            var lines = ChatLines.Pack(items, "; ", "Запуски: ");
+            True(lines.Count > 1, "split");
+            foreach (var l in lines) True(System.Text.Encoding.UTF8.GetByteCount(l) <= ChatLines.MaxBytes, "too long: " + l.Length);
+            True(lines[0].StartsWith("Запуски: "), "prefix");
+            Eq(string.Join("; ", items), string.Join("; ", lines).Replace("Запуски: ", ""), "nothing lost");
+        });
+        Test("short list stays one line, empty list gives nothing", () =>
+        {
+            Eq(1, ChatLines.Pack(new[] { "a", "b" }, ", ").Count);
+            Eq("a, b", ChatLines.Pack(new[] { "a", "b" }, ", ")[0]);
+            Eq(0, ChatLines.Pack(new string[0], ", ").Count);
+        });
+        Test("welcome: new players once, nobody at the server start, again after leaving", () =>
+        {
+            var seen = new HashSet<ulong>();
+            Eq(0, Welcome.Greet(seen, new ulong[] { 1, 2 }, false).Count);
+            Eq(0, Welcome.Greet(seen, new ulong[] { 1, 2 }, true).Count);
+            var g = Welcome.Greet(seen, new ulong[] { 1, 2, 3 }, true);
+            Eq(1, g.Count); Eq(3UL, g[0]);
+            Eq(0, Welcome.Greet(seen, new ulong[] { 1, 3 }, true).Count);
+            Eq(2UL, Welcome.Greet(seen, new ulong[] { 1, 2, 3 }, true)[0]);
+        });
+
         Console.WriteLine($"{_passed} passed, {_failed} failed");
         return _failed == 0 ? 0 : 1;
     }

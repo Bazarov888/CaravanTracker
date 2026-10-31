@@ -41,7 +41,8 @@ A change of behaviour starts with a test case.
 | `StarterRepair.cs` | Giving routes the game's settings back after a crash, and `.cv cleanup`. |
 | `Acts.cs` | Act of a player (by V Blood drunk) and of a route (by guard level). |
 | `Commands.cs` | Chat commands (VampireCommandFramework). |
-| `Loc.cs` | Chat texts in English and Russian. |
+| `Loc.cs` | Chat texts in English and Russian; `L` answers in the language in use for the current player. |
+| `Languages.cs` | Each player's own language (`BepInEx/config/Bazarov.CaravanTracker.languages.txt`) and the VCF middleware that switches to it for every command of this mod. |
 | `Diag.cs` | Developer commands `.cvdiag`, registered only with `EnableDiagnostics = true`. |
 
 ## Game model
@@ -137,6 +138,16 @@ settings (range above 1000, zero timers, no freeze tag) and gives them the game'
   that follows the caravan. `Icons.Sync` touches only icons the mod could have made: on a caravan, icons of the
   current kind, `OldIcons` or a named preset; off a caravan, only an icon of the current or an `OldIcons` kind
   whose object is gone. Icons on marker objects (`Attach`), where the game keeps its own icons, are never touched.
+
+## Chat
+
+- A chat message is 512 bytes at most and VCF cuts replies at 509 characters; a Russian letter is 2 bytes.
+  Lists go through `ChatLines.Pack`, which splits them into lines of at most 450 bytes.
+- Language: `L` holds the language of the player being answered. `LanguageMiddleware` sets it before each
+  command of this mod and resets it after; announcements and start messages set it per recipient;
+  `Ticker.Update` resets it to the server default before background work.
+- `Greeter` (every check) sends the welcome lines to players who came into the world since the previous
+  check (`Welcome.Greet`); nobody is greeted at the first check after the server start.
 
 ## Removing the mod (`.cv cleanup`)
 

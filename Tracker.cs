@@ -27,8 +27,7 @@ static class Announcer
         string title = Settings.Color(Settings.TitleColor, "#FFC83C");
         string text = Settings.Color(Settings.TextColor, "#FFFFFF");
         string command = Settings.Color(Settings.CommandColor, "#7CFC7C");
-        string name = L.Route(route) + (act > 0 ? " (" + L.Act(act) + ")" : "");
-        string head = $"<color={title}><b>{L.T("announce.title", name)}</b></color>";
+        string language = L.Current;
 
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<User>()));
@@ -49,14 +48,22 @@ static class Announcer
                 float3 me = hasCharacter ? Caravans.PositionOf(em, character) : float3.zero;
                 float dist = hasCharacter ? Caravans.Dist2(pos, me) : float.MaxValue;
                 if (nearby && dist > radius) continue;
-                if (hasCharacter)
+                // Each player reads it in their own language.
+                L.Use(user.PlatformId);
+                try
                 {
-                    where = L.T("announce.where", Math.Round(dist), Caravans.Direction(pos.x - me.x, pos.z - me.z)) + " ";
-                    int n = NumberFor(me, cart);
-                    mark = n == 1 ? ".cv m" : n > 1 ? $".cv m {n}" : ".cv l";
+                    string name = L.Route(route) + (act > 0 ? " (" + L.Act(act) + ")" : "");
+                    string head = $"<color={title}><b>{L.T("announce.title", name)}</b></color>";
+                    if (hasCharacter)
+                    {
+                        where = L.T("announce.where", Math.Round(dist), Caravans.Direction(pos.x - me.x, pos.z - me.z)) + " ";
+                        int n = NumberFor(me, cart);
+                        mark = n == 1 ? ".cv m" : n > 1 ? $".cv m {n}" : ".cv l";
+                    }
+                    Chat.Send(em, user, head);
+                    Chat.Send(em, user, $"<color={text}>{where}{L.T("announce.mark")} </color><color={command}><b>{mark}</b></color>");
                 }
-                Chat.Send(em, user, head);
-                Chat.Send(em, user, $"<color={text}>{where}{L.T("announce.mark")} </color><color={command}><b>{mark}</b></color>");
+                finally { L.Use(language); }
                 sent++;
             }
         }
@@ -88,11 +95,59 @@ static class Chat
         ServerChatUtils.SendSystemMessageToClient(em, user, ref msg);
     }
 
-    public static void Send(EntityManager em, Entity userEntity, string text)
+    // A message built in the language of that player.
+    public static void Send(EntityManager em, Entity userEntity, Func<string> text)
     {
         if (userEntity == Entity.Null || !em.Exists(userEntity) || !Caravans.Has<User>(em, userEntity)) return;
         var user = em.GetComponentData<User>(userEntity);
-        if (user.IsConnected) Send(em, user, text);
+        if (!user.IsConnected) return;
+        var saved = L.Current;
+        try { L.Use(user.PlatformId); Send(em, user, text()); }
+        finally { L.Use(saved); }
+    }
+}
+
+// Two lines for a player who has just come into the world: what the mod does and how to pick the language.
+// A player who picked a language gets it in that one, others in English and Russian.
+static class Greeter
+{
+    static readonly HashSet<ulong> InWorld = new();
+    static bool _primed;
+
+    public static void Tick(EntityManager em)
+    {
+        var users = new Dictionary<ulong, User>();
+        var builder = new EntityQueryBuilder(Allocator.Temp).AddAll(ComponentType.ReadOnly(Il2CppType.Of<User>()));
+        var query = em.CreateEntityQuery(ref builder);
+        builder.Dispose();
+        var arr = query.ToEntityArray(Allocator.Temp);
+        try
+        {
+            foreach (var ue in arr)
+            {
+                var user = em.GetComponentData<User>(ue);
+                if (!user.IsConnected) continue;
+                var character = user.LocalCharacter.GetEntityOnServer();
+                if (!em.Exists(character) || !Caravans.OnMap(Caravans.PositionOf(em, character))) continue;
+                users[user.PlatformId] = user;
+            }
+        }
+        finally
+        {
+            arr.Dispose();
+            query.Dispose();
+        }
+        var greet = Welcome.Greet(InWorld, users.Keys, _primed);
+        _primed = true;
+        if (!Settings.Welcome.Value) return;
+        string color = Settings.Color(Settings.TextColor, "#FFFFFF");
+        foreach (var id in greet)
+        {
+            var own = Languages.Of(id);
+            foreach (var lang in own != null ? new[] { own } : new[] { "en", "ru" })
+                Chat.Send(em, users[id], $"<color={color}>{L.In(lang, "welcome")}</color>");
+        }
+        if (greet.Count > 0) Plugin.Trace($"CaravanTracker: welcome sent to {greet.Count} players");
     }
 }
 
@@ -186,6 +241,11 @@ static class Tracker
         }
         _announced = announced;
         _primed = true;
+        if (!paused)
+        {
+            try { Greeter.Tick(em); }
+            catch (Exception e) { Plugin.Warn($"CaravanTracker: welcome failed: {e.Message}"); }
+        }
 
         bool proxyMode = Settings.ProxyMode;
         var none = new List<Caravans.Caravan>();

@@ -23,6 +23,7 @@ static class Settings
     internal static ConfigEntry<int> AnnounceRadius;
     internal static ConfigEntry<bool> AnnounceVanilla;
     internal static ConfigEntry<bool> RouteCommandsForAll;
+    internal static ConfigEntry<bool> Welcome;
     internal static ConfigEntry<string> TitleColor;
     internal static ConfigEntry<string> TextColor;
     internal static ConfigEntry<string> CommandColor;
@@ -60,7 +61,7 @@ static class Settings
         _file = cfg;
 
         Language = cfg.Bind("General", "Language", "en",
-            new ConfigDescription("Language of chat messages. Change in game with .cv lang <en|ru>.",
+            new ConfigDescription("Default language of chat messages, for players who haven't picked their own with .cv lang <en|ru>.",
                 new AcceptableValueList<string>("en", "ru")));
 
         Icon = cfg.Bind("Map", "Icon", "merchant",
@@ -91,6 +92,8 @@ static class Settings
                 new AcceptableValueRange<int>(100, 10000)));
         AnnounceVanilla = cfg.Bind("Chat", "AnnounceVanilla", true,
             "Also announce caravans the game spawned by itself next to a player. false = only caravans started by the mod.");
+        Welcome = cfg.Bind("Chat", "Welcome", true,
+            "Two lines to a player who has just come into the world: what the mod does and how to pick the language (.cv lang).");
         RouteCommandsForAll = cfg.Bind("Chat", "RouteCommandsForAll", true,
             "Let every player use .cv routes and .cv rm, which show where all caravan routes are. false = admins only.");
         TitleColor = cfg.Bind("Chat", "TitleColor", "#FFC83C", "Color of the first announcement line (caravan name).");
