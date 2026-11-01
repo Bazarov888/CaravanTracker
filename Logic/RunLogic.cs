@@ -19,10 +19,12 @@ public sealed class RunState
     public bool LostAny;            // a member of the squad is gone (killed)
     public bool HadCart;
     public bool CartGone;
+    public DateTime ReadySince;     // waking: when the route was first seen back at its first stop, idle
+    public DateTime AtEndSince;     // when the squad was first seen standing at the last stop
     public readonly HashSet<(int, int)> Known = new();   // members of the squad
 }
 
-public enum RunEnd { None, NoSpawn, Done, Timeout }
+public enum RunEnd { None, NoSpawn, Done, StuckAtEnd, Timeout }
 
 public sealed class SquadStep
 {
@@ -43,6 +45,8 @@ public static class RunLogic
     public static readonly TimeSpan AssemblyQuiet = TimeSpan.FromSeconds(90);
     public static readonly TimeSpan AssemblyMax = TimeSpan.FromMinutes(4);
     public static readonly TimeSpan WakeMax = TimeSpan.FromSeconds(20);
+    public static readonly TimeSpan WakeSettle = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan EndGrace = TimeSpan.FromMinutes(2);
     public const float WakeMoved = 5f;
     // A squad's first unit within this distance of where the route stood appeared "in place".
     public const float SamePlace = 20f;
@@ -50,13 +54,22 @@ public static class RunLogic
     // A route at its last stop (WaitForDespawn) is woken first with spawning still off. Seen on the server:
     // spawning there at once puts the squad at the end of the route (31.10, MilitiaCotton), while a route the
     // game finishes itself with the patrol awake goes back to its first stop, position included (31.10,
-    // BanditCopper). So spawning is allowed once the route has left the last stop, stands at its first stop
-    // and the patrol has moved; after WakeMax it is allowed anyway (the squad then appears where the route
-    // stands, as before) and timedOut tells the log.
-    public static bool ReadyToArm(RunState s, DateTime now, bool atEndState, bool atStartIndex, float movedMeters, out bool timedOut)
+    // BanditCopper; 01.11 three times within a second).
+    // Spawning is allowed once the route has left the last stop, stands at its first stop, the patrol has moved
+    // and the spawner is idle again (WaitingForSpawn: the game has finished removing the old squad), and all of
+    // that has held for WakeSettle. Squads spawned one second after the reset, before that (01.11, 1.0.8), had
+    // an animal no damage could hurt and stayed at the last stop instead of being removed there.
+    // After WakeMax spawning is allowed anyway and timedOut tells the log.
+    public static bool ReadyToArm(RunState s, DateTime now, bool atEndState, bool atStartIndex, float movedMeters,
+                                  bool spawnerIdle, out bool timedOut)
     {
         timedOut = false;
-        if (!atEndState && atStartIndex && movedMeters >= WakeMoved) return true;
+        if (!atEndState && atStartIndex && movedMeters >= WakeMoved && spawnerIdle)
+        {
+            if (s.ReadySince == default) s.ReadySince = now;
+            if (now - s.ReadySince >= WakeSettle) return true;
+        }
+        else s.ReadySince = default;
         if (now - s.Started < WakeMax) return false;
         timedOut = true;
         return true;
@@ -105,7 +118,9 @@ public static class RunLogic
 
     // After Squad: carts pulled by the remaining units. cartJustLost: the cart was destroyed just now, the rest
     // of the squad walks on to the end of the route (the start no longer counts in auto-start limits).
-    public static RunEnd Outcome(RunState s, DateTime now, int remaining, int carts, TimeSpan spawnTimeout,
+    // atEnd: the route stands at its last stop. The game removes a squad there within seconds; one still
+    // standing there after EndGrace is StuckAtEnd and is removed by the mod (01.11: a squad stood there 77 minutes).
+    public static RunEnd Outcome(RunState s, DateTime now, int remaining, int carts, bool atEnd, TimeSpan spawnTimeout,
                                  TimeSpan maxRun, out bool cartJustLost)
     {
         cartJustLost = false;
@@ -117,6 +132,12 @@ public static class RunLogic
         }
         if (!s.Spawned && now - s.Started > spawnTimeout) return RunEnd.NoSpawn;
         if (s.Spawned && remaining == 0) return RunEnd.Done;
+        if (s.Spawned && atEnd)
+        {
+            if (s.AtEndSince == default) s.AtEndSince = now;
+            else if (now - s.AtEndSince >= EndGrace) return RunEnd.StuckAtEnd;
+        }
+        else s.AtEndSince = default;
         if (now - s.Started > maxRun) return RunEnd.Timeout;
         return RunEnd.None;
     }
