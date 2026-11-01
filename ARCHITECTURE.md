@@ -15,7 +15,8 @@ The mod is split so that every decision can be tested without the game:
 2. **Decisions** (`Logic/`): pure functions over those records. No game types, no Unity, no BepInEx.
    `RouteLogic` (is a route free, which one to start), `RunLogic` (a forced start second by second),
    `GoneLogic` (why a caravan disappeared), `SpawnRange` (what range and timers a route gets),
-   `CaravanRules` (what is a caravan, what is announced), `ActLogic` (acts).
+   `CaravanRules` (what is a caravan, what is announced), `ActLogic` (acts), `ChatLines` (lists that fit a
+   chat message), `Welcome` (who gets the welcome lines).
 3. **Acting on the game** (`Starter`, `StarterSource`, `StarterRepair`, `Icons`, `Tracker`): carry the decisions out.
 
 `tests/` is a console program that runs the decision layer against cases taken from the server logs
@@ -54,7 +55,7 @@ When the cart is destroyed its loot stays in a container `TM_CarriageContainer_<
 Observed on a live server (game build with BepInEx 6.0.0-be.733):
 
 - The path is the `PatrolBusStopNode` buffer of the patrol. `CurrentBusStopIndex` is 0-based; `Count - 1` is the last stop.
-- The game spawns a squad at the stop the route stands at, and only when a player is within `PlayerRange` of the patrol.
+- The game spawns a squad only when a player is within `PlayerRange` of the patrol.
 - At the last stop the route goes to `WaitForDespawn`, the squad is removed and the route goes back to index 0.
 - A squad comes out in parts: the horse with the cart first, the guards up to about a minute later.
 - Units without players near get `DisabledDueToNoPlayersInRange` and are moved to about (10000, 10000).
@@ -67,6 +68,8 @@ Observed on a live server (game build with BepInEx 6.0.0-be.733):
   (31.10, BanditCopper; MilitiaCotton four times: its first stop is at (-1677, -926), its last at (-1639, -896),
   and every start after a finished run found the patrol at the first stop).
 - In a fight the route stops (`StoppedDueToUnit`) and the animal can be more than 30 m from its cart.
+- A route whose whole squad was killed mid-way keeps moving while awake: MilitiaCotton was "Moving, units 0" at
+  stop 3/4 after the fight and stood at its first stop by the next pick (01.11).
 - Routes finished while no player was near stay frozen at their last stop (`WaitForDespawn`, no units) until
   something wakes them (dump of 30.10: most caravan patrols were in that state).
 
@@ -74,6 +77,7 @@ Not verified, treated as assumptions:
 
 - `PlayerRange = (0, 0.001)` keeps the game from spawning (`Source = Mod`). The range is kept above 0 on purpose,
   in case 0 means "no limit". If a squad appears on a blocked route anyway, a warning goes to the log once per route.
+  So far (31.10–01.11, several evenings of play next to routes) every caravan that set out was started by the mod.
 - Writing `CurrentBusStopIndex` / `TargetBusStopIndex` and `MovePatrolState.Status = WaitingForPath` puts a route
   back to its first stop (`ResetToStart`). Given the facts above it most likely changes only the stop number: the
   squad appears where the route stood and walks to the first stop first. The log gives the distance and warns then.
@@ -161,5 +165,9 @@ keeps `Start`, auto-start and `ApplySource` from changing the world until the se
   the caravan could set out in a strange way. Logged on every start.
 - The respawn guard destroys units the game spawns. If the game ever spawns guards later than the 90-second
   window, they count as squad members, not replacements; if it replaces a unit that was never seen, the guard misses it.
+- The wake phase (`RunLogic.ReadyToArm`) relies on the game returning an awake route to its first stop. It has
+  not run in game yet; the log says whether the route went back or the 20 s fallback was used.
+- `LanguageMiddleware` is added to VCF's global middleware list, so it sees every command of every mod; it acts
+  only on commands declared in this assembly.
 - Fields of `UnitCompositionSpawner` are set by reflection on a boxed copy (`SetField`); a renamed field only logs a warning.
 - `Caravans.Field` / `GameTypes.Find` read some game types by name, because their namespace differs between game builds.
