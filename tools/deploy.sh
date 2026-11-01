@@ -6,8 +6,9 @@
 #   /path/to/server is the folder with VRisingServer.exe and BepInEx/.
 # After it finishes, restart the server.
 #
-# Private repository: put a read-only deploy key into ../.caravan-deploy/id_ed25519 (next to this
-# repository's folder); git then uses it. Without that folder git works without a key.
+# A clone over SSH (or of a private fork) needs a key: put a read-only deploy key into
+# ../.caravan-deploy/id_ed25519 (next to this repository's folder) and git uses it. Without that folder
+# git works without a key, which is enough for a public repository cloned over HTTPS.
 #
 # The whole script is one function called on the last line: bash reads it completely before running it,
 # so a git pull that changes this very file can't break the run in progress.

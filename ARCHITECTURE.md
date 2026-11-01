@@ -86,7 +86,8 @@ Not verified, treated as assumptions:
   back to its first stop (`ResetToStart`). Given the facts above it most likely changes only the stop number: the
   squad appears where the route stood and walks to the first stop first. The log gives the distance and warns then.
 - Spawning a squad right after the game has reset a route (1 s after waking, 1.0.8) gave squads whose animal took no
-  damage and which were not removed at the last stop (01.11, three starts). Spawning only once the spawner is idle
+  damage and which were not removed at the last stop (01.11, three starts; a start from a first stop right after
+  them, without waking, gave an animal that could be killed). Spawning only once the spawner is idle
   again and the route has stood at its first stop for 3 s is assumed to avoid it; the log shows the animal's
   immortal flag and buffs at assembly, and the mod makes the animal mortal once its cart is lost.
 - Spawner settings changed by the mod are kept in the server save. That is why `RepairLeftovers` runs on the first
