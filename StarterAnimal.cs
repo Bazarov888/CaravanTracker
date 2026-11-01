@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using ProjectM;
+using Stunlock.Core;
 using Unity.Entities;
 
 namespace CaravanTracker;
