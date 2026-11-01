@@ -315,13 +315,15 @@ static partial class Starter
         int spawnTimeout = Math.Max(1, Settings.SpawnTimeoutMinutes.Value);
         int maxRun = Math.Max(10, Settings.MaxRunMinutes.Value);
         int maxSquad = Math.Max(5, Settings.MaxSquadSize.Value);
+        var world = Caravans.ServerWorld();
+        var prefabs = world == null ? null : Caravans.Prefabs(world);
 
         for (int i = Runs.Count - 1; i >= 0; i--)
         {
             var run = Runs[i];
             try
             {
-                if (UpdateRun(em, run, now, spawnTimeout, maxRun, maxSquad)) Runs.RemoveAt(i);
+                if (UpdateRun(em, prefabs, run, now, spawnTimeout, maxRun, maxSquad)) Runs.RemoveAt(i);
                 run.Errors = 0;
             }
             catch (Exception e)
@@ -342,7 +344,7 @@ static partial class Starter
 
     // One second of one start: the game's state is read, RunLogic decides, the decisions are carried out.
     // Returns true when the start is over and must be removed.
-    static bool UpdateRun(EntityManager em, Run run, DateTime now, int spawnTimeout, int maxRun, int maxSquad)
+    static bool UpdateRun(EntityManager em, PrefabCollectionSystem prefabs, Run run, DateTime now, int spawnTimeout, int maxRun, int maxSquad)
     {
         if (!em.Exists(run.Patrol)) return true;
         var s = run.State;
@@ -351,11 +353,13 @@ static partial class Starter
         {
             var at = Routes.StopsOf(em, run.Patrol);
             float moved = Caravans.Dist2(patrolPos, run.StartPos);
-            if (!RunLogic.ReadyToArm(s, now, Routes.MoveStatus(em, run.Patrol) == "WaitForDespawn", at?.AtStart ?? false, moved, out bool timedOut))
+            string spawner = em.GetComponentData<UnitCompositionSpawner>(run.Patrol).SpawnerState.ToString();
+            if (!RunLogic.ReadyToArm(s, now, Routes.MoveStatus(em, run.Patrol) == "WaitForDespawn", at?.AtStart ?? false, moved,
+                                     spawner == "WaitingForSpawn", out bool timedOut))
                 return false;
             Arm(em, run);
             string where = $"stop {at?.Log} at ({Math.Round(patrolPos.x)}, {Math.Round(patrolPos.z)}), {Math.Round(moved)} m from its last stop, " +
-                           $"{Math.Round((now - s.Started).TotalSeconds)} s after waking";
+                           $"spawner {spawner}, {Math.Round((now - s.Started).TotalSeconds)} s after waking";
             if (timedOut) Plugin.Warn($"CaravanTracker start: {Id(run)}: the route didn't go back to its first stop by itself ({where}); the squad may spawn where it stands");
             else Plugin.Info($"CaravanTracker start: {Id(run)}: the game returned the route to its first stop ({where}); the squad may spawn");
         }
@@ -393,24 +397,28 @@ static partial class Starter
             run.OverLimit += step.OverLimit.Count;
             Plugin.Warn($"CaravanTracker start: {Id(run)}: squad over MaxSquadSize {maxSquad}, removed {step.OverLimit.Count} units (total {run.OverLimit})");
         }
+        var remaining = new List<Entity>();
+        foreach (var k in step.Remaining) remaining.Add(byKey[k]);
         if (step.Assembled)
         {
             RestoreSpawner(em, run);
             Plugin.Info($"CaravanTracker start: {Id(run)}: squad assembled, {step.Remaining.Count} units " +
                         $"{Math.Round((now - s.SpawnedAt).TotalSeconds)} s after the first one; the route has its own settings back");
+            LogAnimal(em, prefabs, run, remaining, "at assembly");
         }
-
-        var remaining = new List<Entity>();
-        foreach (var k in step.Remaining) remaining.Add(byKey[k]);
         var carts = remaining.Count > 0 ? Routes.CartsOf(em, remaining) : new List<Entity>();
         foreach (var u in remaining) KeepAwake(em, run, u, patrolPos);
         foreach (var c in carts) KeepAwake(em, run, c, patrolPos);
 
-        var end = RunLogic.Outcome(s, now, remaining.Count, carts.Count, TimeSpan.FromMinutes(spawnTimeout),
+        var end = RunLogic.Outcome(s, now, remaining.Count, carts.Count, move == "WaitForDespawn", TimeSpan.FromMinutes(spawnTimeout),
                                    TimeSpan.FromMinutes(maxRun), out bool cartJustLost);
         if (cartJustLost)
+        {
             Plugin.Info($"CaravanTracker start: {Id(run)}: the cart is gone, {remaining.Count} units go on to the end of the route; " +
                         "not counted in auto-start limits any more");
+            LogAnimal(em, prefabs, run, remaining, "after its cart was lost");
+        }
+        if (s.CartGone) MakeAnimalMortal(em, prefabs, run, remaining);
 
         // State changes go to the verbose log (movement flickers between Moving and Stopped, it isn't compared).
         var sp = em.GetComponentData<UnitCompositionSpawner>(run.Patrol);
@@ -431,6 +439,13 @@ static partial class Starter
             case RunEnd.Done:
                 Finish(em, run, "route completed or caravan destroyed");
                 Chat.Send(em, run.User, () => L.T("start.done", L.Route(run.Route)));
+                return true;
+            case RunEnd.StuckAtEnd:
+                // The game removes a squad at the last stop within seconds; this one stayed, so the mod removes it.
+                foreach (var c in carts) DestroyUtility.Destroy(em, c);
+                foreach (var u in remaining) DestroyUtility.Destroy(em, u);
+                Finish(em, run, $"the squad stood at the last stop for {RunLogic.EndGrace.TotalMinutes} minutes; " +
+                                $"removed {remaining.Count} units and {carts.Count} carts the game left there");
                 return true;
             case RunEnd.Timeout:
                 Finish(em, run, $"timeout {maxRun} minutes");

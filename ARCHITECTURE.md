@@ -40,6 +40,7 @@ A change of behaviour starts with a test case.
 | `Starter.cs` | A forced start of one route and looking after it until it ends. |
 | `StarterSource.cs` | `Source = Mod`: keeping the game from spawning caravans by itself. |
 | `StarterRepair.cs` | Giving routes the game's settings back after a crash, and `.cv cleanup`. |
+| `StarterAnimal.cs` | The caravan's animal: its state in the log, mortal again once its cart is lost. |
 | `Acts.cs` | Act of a player (by V Blood drunk) and of a route (by guard level). |
 | `Commands.cs` | Chat commands (VampireCommandFramework). |
 | `Loc.cs` | Chat texts in English and Russian; `L` answers in the language in use for the current player. |
@@ -70,6 +71,9 @@ Observed on a live server (game build with BepInEx 6.0.0-be.733):
 - In a fight the route stops (`StoppedDueToUnit`) and the animal can be more than 30 m from its cart.
 - A route whose whole squad was killed mid-way keeps moving while awake: MilitiaCotton was "Moving, units 0" at
   stop 3/4 after the fight and stood at its first stop by the next pick (01.11).
+- Waking a route at its last stop makes the game return it to its first stop within a second (01.11, three
+  times; MilitiaIron's first stop is 266 m from its last).
+- Two different patrols can carry the same route key: MilitiaCotton has a 4-stop and a 7-stop route (01.11).
 - Routes finished while no player was near stay frozen at their last stop (`WaitForDespawn`, no units) until
   something wakes them (dump of 30.10: most caravan patrols were in that state).
 
@@ -81,8 +85,10 @@ Not verified, treated as assumptions:
 - Writing `CurrentBusStopIndex` / `TargetBusStopIndex` and `MovePatrolState.Status = WaitingForPath` puts a route
   back to its first stop (`ResetToStart`). Given the facts above it most likely changes only the stop number: the
   squad appears where the route stood and walks to the first stop first. The log gives the distance and warns then.
-- Waking a route at its last stop makes the game return it to its first stop within seconds (the wake phase below).
-  If not, the start goes on after 20 s with a warning.
+- Spawning a squad right after the game has reset a route (1 s after waking, 1.0.8) gave squads whose animal took no
+  damage and which were not removed at the last stop (01.11, three starts). Spawning only once the spawner is idle
+  again and the route has stood at its first stop for 3 s is assumed to avoid it; the log shows the animal's
+  immortal flag and buffs at assembly, and the mod makes the animal mortal once its cart is lost.
 - Spawner settings changed by the mod are kept in the server save. That is why `RepairLeftovers` runs on the first
   check after the server starts and why `.cv cleanup` exists.
 
@@ -101,8 +107,9 @@ All world access is on the main thread. Each step has its own try/catch, so an e
 1. A squad still on the route is destroyed together with its carts.
 2. With `ResetToStart`, a route standing mid-way is put back to its first stop.
 3. The spawner's own values are saved in the run. A route at its last stop gets a blocked range and is woken
-   (`RunPhase.Waking`); once the game has returned it to its first stop (`RunLogic.ReadyToArm`), or after 20 s,
-   it is armed like any other route: `PlayerRange = (0, 100000)`, zero respawn timers, no `RespawnTime`.
+   (`RunPhase.Waking`); once the game has returned it to its first stop and its spawner is idle for 3 s
+   (`RunLogic.ReadyToArm`), or after 20 s, it is armed like any other route: `PlayerRange = (0, 100000)`, zero
+   respawn timers, no `RespawnTime`.
 4. The patrol loses `DisableWhenNoPlayersInRange` and is enabled.
 
 Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRun` carries it out:
@@ -113,8 +120,10 @@ Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRu
 - The start settings stay until the squad hasn't grown for 90 seconds (at most 4 minutes after the first unit),
   then `RestoreSpawner` puts the saved spawner values back. A blocked or zero range is restored as the game's (0, 90).
 - Every unit and cart of the squad loses `DisableWhenNoPlayersInRange` and is woken up if the game froze it.
+- Once the cart is lost, an animal the game still holds immortal is made mortal (`StarterAnimal.cs`).
 - The run ends when no unit appeared within `SpawnTimeoutMinutes` (the route is then skipped by auto-start for
-  an hour), when the squad is gone, or after `MaxRunMinutes`. `Finish` restores the spawner, gives the freeze tag
+  an hour), when the squad is gone, when the squad has stood at the last stop for 2 minutes (the mod removes it),
+  or after `MaxRunMinutes`. `Finish` restores the spawner, gives the freeze tag
   back to units still alive and, with `Source = Mod`, blocks the route again if it waits for a new squad.
 
 Runs live only in memory. After a restart in the middle of a start, `RepairLeftovers` finds routes with start

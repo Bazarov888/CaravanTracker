@@ -239,19 +239,32 @@ static class Program
         Test("outcomes: no spawn, cart lost, done, timeout", () =>
         {
             var s = new RunState { Started = T0 };
-            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(4), 0, 0, timeout, maxRun, out _));
-            Eq(RunEnd.NoSpawn, RunLogic.Outcome(s, T0.AddMinutes(6), 0, 0, timeout, maxRun, out _));
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(4), 0, 0, false, timeout, maxRun, out _));
+            Eq(RunEnd.NoSpawn, RunLogic.Outcome(s, T0.AddMinutes(6), 0, 0, false, timeout, maxRun, out _));
 
             s = new RunState { Started = T0 };
             RunLogic.Squad(s, T0, false, Us(1, 2), Max);
-            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(1), 2, 1, timeout, maxRun, out var lost1)); True(!lost1, "cart there");
-            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(2), 1, 0, timeout, maxRun, out var lost2)); True(lost2 && s.CartGone, "cart lost");
-            RunLogic.Outcome(s, T0.AddMinutes(3), 1, 0, timeout, maxRun, out var lost3); True(!lost3, "reported once");
-            Eq(RunEnd.Done, RunLogic.Outcome(s, T0.AddMinutes(4), 0, 0, timeout, maxRun, out _));
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(1), 2, 1, false, timeout, maxRun, out var lost1)); True(!lost1, "cart there");
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(2), 1, 0, false, timeout, maxRun, out var lost2)); True(lost2 && s.CartGone, "cart lost");
+            RunLogic.Outcome(s, T0.AddMinutes(3), 1, 0, false, timeout, maxRun, out var lost3); True(!lost3, "reported once");
+            Eq(RunEnd.Done, RunLogic.Outcome(s, T0.AddMinutes(4), 0, 0, false, timeout, maxRun, out _));
 
             s = new RunState { Started = T0 };
             RunLogic.Squad(s, T0, false, Us(1), Max);
-            Eq(RunEnd.Timeout, RunLogic.Outcome(s, T0.AddMinutes(91), 1, 1, timeout, maxRun, out _));
+            Eq(RunEnd.Timeout, RunLogic.Outcome(s, T0.AddMinutes(91), 1, 1, false, timeout, maxRun, out _));
+        });
+        Test("log 01.11: a squad standing at the last stop for 2 minutes is stuck, not 77 minutes", () =>
+        {
+            var s = new RunState { Started = T0 };
+            RunLogic.Squad(s, T0, false, Us(1, 2, 3, 4, 5, 6, 7, 8), Max);
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(13), 8, 1, true, timeout, maxRun, out _));
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(14), 8, 1, true, timeout, maxRun, out _));
+            Eq(RunEnd.StuckAtEnd, RunLogic.Outcome(s, T0.AddMinutes(15), 8, 1, true, timeout, maxRun, out _));
+            var s2 = new RunState { Started = T0 };
+            RunLogic.Squad(s2, T0, false, Us(1), Max);
+            RunLogic.Outcome(s2, T0.AddMinutes(13), 1, 1, true, timeout, maxRun, out _);
+            RunLogic.Outcome(s2, T0.AddMinutes(14), 1, 1, false, timeout, maxRun, out _);
+            Eq(RunEnd.None, RunLogic.Outcome(s2, T0.AddMinutes(15), 1, 1, true, timeout, maxRun, out _));
         });
 
         Test("log 31.10 Cotton: a route at its last stop is woken before it may spawn", () =>
@@ -263,10 +276,22 @@ static class Program
         Test("waking: spawn only after the game returned the route to its first stop", () =>
         {
             var s = new RunState { Started = T0, Phase = RunPhase.Waking };
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), true, false, 0, out _), "still at the end");
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 0, out _), "index reset, patrol not moved yet");
-            True(RunLogic.ReadyToArm(s, T0.AddSeconds(3), false, true, 120, out var t1) && !t1, "back at the first stop");
-            True(RunLogic.ReadyToArm(s, T0.AddSeconds(21), true, false, 0, out var t2) && t2, "gives up after 20 s");
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), true, false, 0, false, out _), "still at the end");
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 0, true, out _), "index reset, patrol not moved yet");
+            True(RunLogic.ReadyToArm(s, T0.AddSeconds(21), true, false, 0, false, out var t2) && t2, "gives up after 20 s");
+        });
+        Test("log 01.11: no spawn one second after the reset; the spawner must be idle and it must hold 3 s", () =>
+        {
+            var s = new RunState { Started = T0, Phase = RunPhase.Waking };
+            // 1.0.8 armed here (back at the first stop 1 s after waking): the animal was immortal.
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), false, true, 266, false, out _), "old squad still being removed");
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 266, true, out _), "idle just now");
+            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(4), false, true, 266, true, out _), "2 s idle");
+            True(RunLogic.ReadyToArm(s, T0.AddSeconds(5), false, true, 266, true, out var t) && !t, "3 s idle");
+            var s2 = new RunState { Started = T0, Phase = RunPhase.Waking };
+            RunLogic.ReadyToArm(s2, T0.AddSeconds(2), false, true, 50, true, out _);
+            True(!RunLogic.ReadyToArm(s2, T0.AddSeconds(4), false, true, 50, false, out _), "not idle again: wait anew");
+            True(!RunLogic.ReadyToArm(s2, T0.AddSeconds(6), false, true, 50, true, out _), "idle again for 0 s");
         });
 
         // --- Acts and caravan rules

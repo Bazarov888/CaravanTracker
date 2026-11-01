@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.10
+
+- A route woken at its last stop now spawns its squad only after the game has finished removing the old one (spawner idle again) and the route has stood at its first stop for 3 seconds. In 1.0.8 the squad spawned one second after the reset: its animal took no damage, even after the cart was destroyed, and a squad that reached the end stayed there instead of being removed.
+- An animal still immortal after its cart is lost is made mortal, so the rest of a robbed caravan can always be killed. The log says when this happens.
+- A started squad that stands at the last stop for 2 minutes is removed by the mod (the game removes one there within seconds). Before, it stood there until `MaxRunMinutes` and took a place in the auto-start limits.
+- The log shows the animal's state (immortal flag and buffs) when the squad is assembled and when its cart is lost, and the spawner state when a woken route is armed.
+
 ## 1.0.9
 
 - Config descriptions of `RoutePick` and `ResetToStart` match how picking and putting back work since 1.0.8.
