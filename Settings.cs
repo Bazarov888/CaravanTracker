@@ -123,9 +123,9 @@ static class Settings
             new ConfigDescription("How many caravans started by the mod may travel at the same time on the whole server.",
                 new AcceptableValueRange<int>(1, 50)));
         RoutePick = cfg.Bind("AutoStart", "RoutePick", "Random",
-            new ConfigDescription("How a route is picked among the free routes of an act. Routes standing at the start of their path always go first; " +
-                                  "if there are none, the one with the most stops left is taken. Random = any route at the start. " +
-                                  "Rotate = the route at the start that the mod started longest ago.",
+            new ConfigDescription("How a route is picked among the free routes of an act. Routes at the first or the last stop of their path go first " +
+                                  "(both set out from the first stop); routes left mid-way come after them. Random = any of them but the route " +
+                                  "started last, while another one is free. Rotate = the one the mod started longest ago.",
                 new AcceptableValueList<string>("Random", "Rotate")));
         ExcludedRoutes = cfg.Bind("AutoStart", "ExcludedRoutes", "",
             "Routes auto-start never uses, comma separated, e.g. BanditPrisoners,ChurchLegion. Route names: .cv routes. .cv start still works for them.");
@@ -140,8 +140,8 @@ static class Settings
             new ConfigDescription("A started caravan is looked after at most this long. After that the mod stops keeping it awake and the route gets its normal settings back.",
                 new AcceptableValueRange<int>(10, 600)));
         ResetToStart = cfg.Bind("Start", "ResetToStart", true,
-            "A route left mid-way by an earlier caravan is put back to the first stop of its path before the mod starts it, " +
-            "so the caravan drives the whole way. false = the caravan sets out from where the route stands.");
+            "A route left mid-way by an earlier caravan is put back to the first stop of its path before the mod starts it: " +
+            "the caravan walks to the first stop and then drives the whole way. false = it goes on from the stop where the route stands.");
         MaxSquadSize = cfg.Bind("Start", "MaxSquadSize", 20,
             new ConfigDescription("Safety limit. Units above this number in a squad started by the mod are removed at once, so the game can't fill the server memory with guards.",
                 new AcceptableValueRange<int>(5, 100)));

@@ -1,5 +1,7 @@
 # CaravanTracker
 
+[![build](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml/badge.svg)](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml)
+
 Server-side mod for V Rising. Caravans become visible on the map for everyone, players get a chat announcement when a caravan sets out, and the mod can start caravans on its own in the acts where players are online.
 
 Players don't need to install anything.
@@ -7,7 +9,7 @@ Players don't need to install anything.
 ## What it does
 
 - **Caravans on the map.** Every caravan on the road, every caravan frozen mid-route and every loot container left after a robbed caravan gets a map icon. The icon is visible to all players on the whole map, without discovering the area first.
-- **Announcements.** When a caravan sets out, every online player gets two chat lines. The first one names the caravan and its act, the second one gives the distance and direction from that player and the `.cv m <number>` command that puts a map marker on it.
+- **Announcements.** When a caravan sets out, online players get two chat lines (all of them, those of the caravan's act or those nearby, see `AnnounceTo`), each in their own language. The first one names the caravan and its act, the second one gives the distance and direction from that player and the `.cv m <number>` command that puts a map marker on it.
 - **Auto-start by act.** In vanilla a caravan only spawns when a player happens to be near its route. The mod starts caravans itself: in every act where players are online, at most one new caravan per interval, within the per-act and server limits. Routes standing at the start or at the end of their path go first, both set out from the first stop, so a caravan gets the whole way; the route started last is skipped while another one is free. Nobody online means nothing starts.
 - **Commands** to list caravans, mark the nearest one, see all routes with their act, and start a caravan on a chosen route.
 
@@ -60,6 +62,7 @@ For admins:
 |---|---|---|---|
 | General | Language | `en` | `en` or `ru`: default for players who haven't picked their own with `.cv lang` |
 | Map | Icon | `merchant` | `merchant`, `unknown`, `vblood` or a PrefabGUID number |
+| Map | OldIcons | empty | Filled by `.cv icon`: icons used before, whose leftovers are cleaned up |
 | Map | GlobalIcons | `true` | Icons visible to everyone on the whole map |
 | Map | IconMode | `direct` | `direct` or `proxy` |
 | Map | IconOnLoot | `true` | Icon on the loot left after a robbed caravan |
@@ -79,7 +82,7 @@ For admins:
 | AutoStart | MaxTotal | `6` | The same for the whole server |
 | AutoStart | RoutePick | `Random` | `Random` (any free route but the one started last) or `Rotate` (the route started longest ago) |
 | AutoStart | ExcludedRoutes | empty | Routes auto-start never uses, e.g. `BanditPrisoners,ChurchLegion` |
-| AutoStart | RouteActs | empty | Manual acts, e.g. `MilitiaIron=2,ChuchSilver=4` |
+| AutoStart | RouteActs | empty | Manual acts, e.g. `MilitiaIron=2,ChuchSilver=4` (route keys are the game's own spelling, `Chuch` included) |
 | Start | SpawnTimeoutMinutes | `5` | How long to wait for a started squad to appear |
 | Start | ResetToStart | `true` | A route left mid-way is put back to its first stop before a start |
 | Start | MaxRunMinutes | `90` | How long a started caravan is looked after |
@@ -91,16 +94,18 @@ For admins:
 
 Limits count only caravans started by the mod that still have their cart. Caravans that spawn the vanilla way next to players are not counted.
 
+Each player's language picked with `.cv lang` is kept in `BepInEx/config/Bazarov.CaravanTracker.languages.txt`.
+
 ## Limitations
 
 - The game has no wagon map icon, and a server mod can't send new pictures to players, so the caravan icon is one of the game's own icons. Pick the one you like with `.cv icon`.
 - A started caravan keeps moving even if everybody logs off, and disappears at the end of its route as usual.
 - A route carries one caravan at a time. When the cart is destroyed, the horse walks on to the end of the route, where the game removes it and returns the route to the start. Until then that route is busy; other routes are not affected.
-- If an earlier caravan was destroyed mid-way, its route stays there. Before starting such a route the mod puts it back to its first stop (`ResetToStart`), and auto-start takes such routes last.
+- A caravan whose whole squad was killed leaves its route mid-way. While a player is near, the empty route drives on to its end and the game returns it to the start. If it froze mid-way, the mod puts it back to its first stop before starting it (`ResetToStart`): the caravan walks to the first stop and then drives the whole way. Auto-start takes such routes last.
 
 ## Installation
 
-With r2modman or Thunderstore Mod Manager: install CaravanTracker, the dependencies come along.
+Not on Thunderstore yet. Until then take `CaravanTracker.dll` from the zip of the latest [CI run](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml) (artifact `CaravanTracker`) or build it yourself (see Building). Once it is published, r2modman or Thunderstore Mod Manager will install it with its dependencies.
 
 Manually: put `CaravanTracker.dll` into `BepInEx/plugins/` on the server. Needs [BepInExPack V Rising](https://thunderstore.io/c/v-rising/p/BepInEx/BepInExPack_V_Rising/) and [VampireCommandFramework](https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/).
 
