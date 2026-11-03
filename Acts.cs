@@ -12,8 +12,9 @@ namespace CarriageTracker;
 
 // Acts as in the game's V Blood menu (K). A player's act (PlayerAct setting, ActLogic): by V Blood, the act of the
 // highest V Blood drunk, and the next act once the final V Blood of an act is drunk; or by the character's level;
-// or the higher of both. A route's acts come from the level of the caravan guards, with the same bounds as the
-// bosses in the menu (up to 39 - I, 40-59 - II, 60-65 - III, 66 and above - IV), or from RouteActs.
+// or the higher of both. A route's acts are its region's (ActLogic.RegionAct), or from RouteActs; a route of an
+// unknown region goes by the level of its guards, with the same bounds as the bosses in the menu (up to 39 - I,
+// 40-59 - II, 60-65 - III, 66 and above - IV).
 static class Acts
 {
     public record Boss(int Act, string Name, int Level);

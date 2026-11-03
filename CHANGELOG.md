@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.12
+
+- A route's act is now its region's (Farbane I, Dunley II, Silverlight and Oakveil IV) instead of its guards' level. The Draculin prison carriage of Dunley (`ChurchLegion`, vampires guarded by the Church of Luminance) is an act II carriage now; by its guards' level it landed outside act II, with the Silverlight routes (in the 1.0.10 log act II had only the four militia routes). A route of an unknown region still goes by its guards' level.
+
 ## 1.0.11
 
 - The mod is now called CarriageTracker, after the game's own name for caravans: `CarriageTracker.dll` in `BepInEx/plugins/CarriageTracker/`, plugin `CarriageTracker`, repository [Bazarov888/CarriageTracker](https://github.com/Bazarov888/CarriageTracker). `Bazarov.CaravanTracker.cfg` and the players' languages file move to the new names on the first start. While the old `CaravanTracker.dll` is still installed, the new mod writes an error to the log and does nothing; `tools/deploy.sh` removes the old folder. Commands stay `.cv`. English chat says "carriage".

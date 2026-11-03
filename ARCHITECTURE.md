@@ -43,7 +43,7 @@ A change of behaviour starts with a test case.
 | `StarterSource.cs` | `Source = Mod`: keeping the game from spawning caravans by itself. |
 | `StarterRepair.cs` | Giving routes the game's settings back after a crash, and `.cv cleanup`. |
 | `StarterAnimal.cs` | The caravan's animal: its state in the log, mortal again once its cart is lost; leftover spawn buffs removed from the squad. |
-| `Acts.cs` | Act of a player (by V Blood drunk or by level, `PlayerAct`) and of a route (by guard level or `RouteActs`). |
+| `Acts.cs` | Act of a player (by V Blood drunk or by level, `PlayerAct`) and of a route (by its region, `RouteActs`, or guard level for an unknown route). |
 | `Commands.cs` | Chat commands (VampireCommandFramework). |
 | `Loc.cs` | Chat texts in English and Russian; `L` answers in the language in use for the current player. |
 | `Languages.cs` | Each player's own language (`BepInEx/config/CarriageTracker.languages.txt`, kept by `LanguageStore`) and the VCF middleware that switches to it for every command of this mod. |
@@ -169,8 +169,12 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   V Blood of an act is drunk (Quincey, Octavian, Cyril; the game itself moves acts on by its journal). `Level`:
   `OfLevel` of the character's level (`Equipment.GetFullLevel`; Bloodcraft's leveling writes its own level there,
   without it this is the gear level). `Highest`: the higher of both.
-- A route's acts: `RouteActs` for its key, else for its region (`ActLogic.Region`, after the wiki), else `OfLevel`
-  of its strongest guard. A route can have several acts (`Silverlight=3+4`).
+- A route's acts: `RouteActs` for its key, else for its region (`ActLogic.Region`, after the wiki), else the act
+  of its region (`ActLogic.RegionAct`: Farbane I, Dunley II, Silverlight and Oakveil IV), else, for a route the
+  wiki doesn't know, `OfLevel` of its strongest guard. A route can have several acts (`Silverlight=3+4`). Until
+  1.0.12 the guard level was the rule; it put the Draculin prison carriage of Dunley (`ChurchLegion`), whose
+  guards are the same Church of Luminance units as in Silverlight, outside act II (the 1.0.10 log: act II had
+  only the four militia routes).
 - `ActLogic.Served`: a player act with routes gets its own; one without (act III: no carriages in Gloomrot and the
   Cursed Forest) gets the next one up, down or both (`EmptyAct`).
 - Auto-start keeps its interval and `MaxPerAct` per route act. Start history (`LastRouteStart`, `FailedAt`) is per

@@ -135,7 +135,8 @@ static class Settings
         RouteActs = cfg.Bind("AutoStart", "RouteActs", "",
             "Manual acts for routes or whole regions, comma separated; several acts joined with +. " +
             "E.g. Silverlight=3+4,Oakveil=4,MilitiaIron=2. Regions: Farbane, Dunley, Silverlight, Oakveil; route names: .cv routes. " +
-            "A route's own entry wins over its region's. By default a route's act comes from its guards' level, " +
+            "A route's own entry wins over its region's. By default a route's act is its region's: Farbane I, Dunley II " +
+            "(the Draculin prison carriage too), Silverlight and Oakveil IV; a route of an unknown region gets it from its guards' level, " +
             "the same bounds as V Blood in the game's menu: up to 39 - I, 40-59 - II, 60-65 - III, 66+ - IV.");
         PlayerAct = cfg.Bind("AutoStart", "PlayerAct", "VBlood",
             new ConfigDescription("How a player's act is found. VBlood = the act of the highest V Blood drunk; the strongest V Blood of an act " +
