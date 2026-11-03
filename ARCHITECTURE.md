@@ -81,9 +81,9 @@ Observed on a live server (game build with BepInEx 6.0.0-be.733):
 - The two Oakveil patrols (Blackfang) have `PatrolType = Sequential`, every other caravan route `Sequential_Once`
   (dump of 30.10): their path has no end and the caravan circles until destroyed, as the wiki says.
   `Progress.Loop` carries this: such a route is never put back to its start, counts as standing at its start when
-  a route is picked, its run ends when the cart is lost, and what is left of a robbed caravan there doesn't keep
-  the route busy (`RouteState.LoopLeftover`; the next start removes it). Not seen in game yet: nobody has reached
-  Oakveil on the server.
+  a route is picked, and its run ends when the cart is lost, so what is left may freeze once no player is near.
+  While players are near it the route stays busy (`RouteState.LoopLeftover`, they may still be fighting it);
+  frozen, it is free and the next start removes it. Not seen in game yet: nobody has reached Oakveil on the server.
 - The squad size is the largest group of the patrol's composition (`UnitCompositionGroupEntry.UnitsCount`; 8 for
   militia and bandit routes, three groups of 8 to pick from).
 - On 01.11 and 02.11 the animal of squads of woken routes took no damage, also after its cart was destroyed, while

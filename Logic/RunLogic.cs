@@ -142,8 +142,8 @@ public static class RunLogic
     // of the squad walks on to the end of the route (the start no longer counts in auto-start limits).
     // atEnd: the route stands at its last stop. The game removes a squad there within seconds; one still
     // standing there after EndGrace is StuckAtEnd and is removed by the mod (01.11: a squad stood there 77 minutes).
-    // loop: the route has no end. Its robbed caravan would never reach one, so the run ends when the cart is lost;
-    // the rest circles on, and the route counts as free (RouteState.LoopLeftover).
+    // loop: the route has no end. Its robbed caravan would never reach one, so the run ends when the cart is lost:
+    // the rest circles on and may freeze again once no player is near, which frees the route.
     public static RunEnd Outcome(RunState s, DateTime now, int remaining, int carts, bool atEnd, TimeSpan spawnTimeout,
                                  TimeSpan maxRun, out bool cartJustLost, bool loop = false)
     {

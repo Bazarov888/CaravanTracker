@@ -9,7 +9,7 @@
 - New setting `PlayerAct`: `VBlood` (default), `Level` (by the character's level; with Bloodcraft leveling that is the Bloodcraft level) or `Highest`.
 - `RouteActs` takes regions (`Farbane`, `Dunley`, `Silverlight`, `Oakveil`) and several acts per entry, e.g. `Silverlight=3+4,Oakveil=4`. `.cv r` shows each route's region; `.cv a` shows how the act was found and which routes you get.
 - Route names follow the wiki: Venom Blades emery and venom sap routes, the Draculin prison carriage; the two `MilitiaCotton` routes are told apart as east and west.
-- The two Oakveil routes have no end: they are no longer put back to the start, count as ready when a route is picked, and a robbed carriage there no longer keeps the route busy forever.
+- The two Oakveil routes have no end: they are no longer put back to the start and count as ready when a route is picked. The mod stops looking after a carriage there when its cart is destroyed, so what is left can freeze once nobody is near and the route is free again; before, the mod kept it awake and the route busy for up to `MaxRunMinutes`.
 - A route woken at its last stop that doesn't go back to its first stop within 20 seconds is given up and skipped for an hour, instead of spawning its squad at the end of the route.
 - A fight right at the start no longer removes the guards still on their way: a new unit after a loss is a replacement only once the squad has reached its size.
 - Fixes from the code audit of 02.11:

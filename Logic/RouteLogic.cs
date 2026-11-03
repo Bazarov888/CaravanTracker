@@ -31,7 +31,7 @@ public enum RouteState
     OnRoad,          // a squad with its cart
     CartLost,        // the cart is destroyed, the rest of the squad walks to the end of the route
     FrozenLeftover,  // what is left of a robbed caravan froze off the map, it would stand there until a player comes
-    LoopLeftover,    // the cart is destroyed on a route without an end: the rest would circle until killed
+    LoopLeftover,    // the cart is destroyed on a route without an end, players are near: the rest circles on
     AtEnd,           // at the last stop (WaitForDespawn): the game removes the squad and returns the route to the start
     Empty,           // no squad: waits for a new caravan at the stop it stands at
 }
@@ -53,12 +53,12 @@ public static class RouteLogic
     }
 
     // A route the mod may start: nothing of the mod's runs there, and no caravan on the road.
-    // A start removes leftovers (a squad at the end, a frozen horse without its cart, what is left of a robbed
-    // caravan on a route without an end) like any stuck squad. On an ordinary route the rest of a robbed caravan
-    // walks to the end, where the game removes it; on a loop it never would.
+    // A start removes leftovers (a squad at the end, a frozen horse without its cart) like any stuck squad.
+    // On an ordinary route the rest of a robbed caravan walks to the end, where the game removes it. On a loop it
+    // never would: it stays busy while players are near (they may still be fighting it) and becomes a
+    // FrozenLeftover, free, once nobody is (the run ends with the cart, so it may freeze: RunEnd.LoopCartLost).
     public static bool IsFree(RouteState state) =>
-        state == RouteState.Empty || state == RouteState.AtEnd || state == RouteState.FrozenLeftover ||
-        state == RouteState.LoopLeftover;
+        state == RouteState.Empty || state == RouteState.AtEnd || state == RouteState.FrozenLeftover;
 
     // Where a free route stands, for the pick order and the log. A route without an end has no "mid-way":
     // it counts as standing at its start.

@@ -31,7 +31,7 @@ Regions and routes, after the [wiki](https://wiki.v-ris.ing/w/Carriage) (route k
 | `Silverlight` (Silverlight Hills) | `ChuchSilver`, `ChurchMutants` (mutant prison), `ChuchGrape` |
 | `Oakveil` (Oakveil Woodlands) | `BlackfangBastion` (emery), `BlackfangSouth` (venom sap and oak) |
 
-The two Oakveil routes have no end: their carriage circles until it is destroyed. When its cart is destroyed, the rest of the squad circles on, and the next start on that route removes it.
+The two Oakveil routes have no end: their carriage circles until it is destroyed. When its cart is destroyed, the rest of the squad circles on; once no player is near it freezes, and the next start on that route removes it.
 
 ## Commands
 

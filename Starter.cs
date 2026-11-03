@@ -490,7 +490,8 @@ static partial class Starter
                 Chat.Send(em, run.User, () => L.T("start.done", Routes.Name(run.Route, run.Patrol)));
                 return true;
             case RunEnd.LoopCartLost:
-                Finish(em, run, $"the cart is gone on a route without an end; {remaining.Count} units circle on, the next start there removes them");
+                Finish(em, run, $"the cart is gone on a route without an end; {remaining.Count} units circle on, " +
+                                "the route is free again once they freeze without players near");
                 Chat.Send(em, run.User, () => L.T("start.done", Routes.Name(run.Route, run.Patrol)));
                 return true;
             case RunEnd.StuckAtEnd:

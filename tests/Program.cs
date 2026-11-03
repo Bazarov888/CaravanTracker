@@ -129,7 +129,7 @@ static class Program
             last["71665:2"] = T0.AddMinutes(20);
             Eq("71689:2", free[RouteLogic.Choose(free, true, true, ls, new Random(1))].Id, "rotate back");
         });
-        Test("loop routes (Oakveil): no mid-way, no reset, robbed leftovers free the route", () =>
+        Test("loop routes (Oakveil): no mid-way, no reset, robbed leftovers free the route once frozen", () =>
         {
             var loop = new Progress(2, 6, 8, true);
             True(!loop.AtLast && loop.Left == 0, "no end");
@@ -137,7 +137,9 @@ static class Program
             Eq(PickGroup.AtStart, RouteLogic.Group(Route(stops: loop)), "counts as at its start");
             True(!RouteLogic.NeedsReset(loop, "Moving"), "no reset");
             var robbed = RouteLogic.Classify(Route(units: 4, carts: 0, stops: loop));
-            Eq(RouteState.LoopLeftover, robbed); True(RouteLogic.IsFree(robbed), "free");
+            Eq(RouteState.LoopLeftover, robbed); True(!RouteLogic.IsFree(robbed), "busy while players are near");
+            var frozen = RouteLogic.Classify(Route(units: 4, onMap: 0, carts: 0, stops: loop));
+            Eq(RouteState.FrozenLeftover, frozen); True(RouteLogic.IsFree(frozen), "free once frozen");
             Eq(RouteState.OnRoad, RouteLogic.Classify(Route(units: 5, carts: 1, stops: loop)));
             var s = new RunState { Started = T0 };
             RunLogic.Squad(s, T0, false, Us(1, 2), 20);
