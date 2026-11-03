@@ -395,6 +395,15 @@ static class Program
             Eq(3, ActLogic.Of(PlayerActBy.Highest, 3, 45));
             Eq(4, ActLogic.Of(PlayerActBy.Highest, 3, 66));
         });
+        Test("03.11: the Draculin prison carriage (ChurchLegion) is act II, with Dunley, whatever its guards' level", () =>
+        {
+            var none = ActLogic.ParseRouteActs("");
+            Eq("2", string.Join("+", ActLogic.RouteActs("ChurchLegion", 70, none, out _)), "Dunley");
+            Eq("4", string.Join("+", ActLogic.RouteActs("ChuchSilver", 70, none, out _)), "Silverlight");
+            Eq("4", string.Join("+", ActLogic.RouteActs("ChurchMutants", 63, none, out _)), "Silverlight, guards below 66");
+            Eq("4", string.Join("+", ActLogic.RouteActs("BlackfangSouth", 80, none, out _)), "Oakveil");
+            Eq("1", string.Join("+", ActLogic.RouteActs("BanditCopper", 25, none, out _)), "Farbane");
+        });
         Test("regions of routes (wiki, Carriage page)", () =>
         {
             Eq("Farbane", ActLogic.Region("BanditCopper")); Eq("Dunley", ActLogic.Region("MilitiaCotton"));
@@ -409,9 +418,11 @@ static class Program
             Eq("2", string.Join("+", ActLogic.RouteActs("MilitiaIron", 50, m, out bool man1))); True(man1, "manual");
             Eq("3+4", string.Join("+", ActLogic.RouteActs("ChuchSilver", 70, m, out _)), "by region");
             Eq("3+4", string.Join("+", ActLogic.RouteActs("ChuchGrape", 70, m, out _)), "a wrong value is skipped, region applies");
-            Eq("2", string.Join("+", ActLogic.RouteActs("MilitiaQuartz", 50, m, out bool man2))); True(!man2, "by level");
-            var key = ActLogic.ParseRouteActs("ChurchLegion=2,Dunley=3");
-            Eq("2", string.Join("+", ActLogic.RouteActs("ChurchLegion", 70, key, out _)), "the route key wins over its region");
+            Eq("2", string.Join("+", ActLogic.RouteActs("MilitiaQuartz", 50, m, out bool man2))); True(!man2, "by region");
+            var key = ActLogic.ParseRouteActs("ChurchLegion=4,Dunley=3");
+            Eq("4", string.Join("+", ActLogic.RouteActs("ChurchLegion", 70, key, out _)), "the route key wins over its region");
+            Eq("3", string.Join("+", ActLogic.RouteActs("MilitiaIron", 50, key, out _)), "region set by hand");
+            Eq("1", string.Join("+", ActLogic.RouteActs("NewRoute", 30, m, out _)), "unknown route: by level");
             Eq(0, ActLogic.RouteActs("X", 0, m, out _).Count, "unknown level");
         });
         Test("log 30.10: a cart left without its animal gets no icon", () =>

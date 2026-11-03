@@ -73,6 +73,21 @@ public static class ActLogic
     // doesn't know (added by a game update).
     public static readonly string[] Regions = { "Farbane", "Dunley", "Silverlight", "Oakveil" };
 
+    // The act of a region's carriages: Farbane Woods I, Dunley Farmlands II, Silverlight Hills and Oakveil Woodlands
+    // IV (their V Blood are act IV in the game's menu). The game gives a region's carriages to the players of that
+    // region (the wiki: loot tier goes by region), so the Draculin prison carriage is an act II carriage, the hard
+    // one of Dunley, though its guards are the same Church of Luminance units as in Silverlight. Until 1.0.12 a
+    // route's act came from its guards' level, which put it outside act II with them (the 1.0.10 log: act II had
+    // only the four militia routes). 0 for an unknown region.
+    public static int RegionAct(string region) => region switch
+    {
+        "Farbane" => 1,
+        "Dunley" => 2,
+        "Silverlight" => 4,
+        "Oakveil" => 4,
+        _ => 0,
+    };
+
     public static string Region(string key)
     {
         if (string.IsNullOrEmpty(key)) return null;
@@ -104,8 +119,8 @@ public static class ActLogic
         return result;
     }
 
-    // Acts of a route: set by hand for its key, else for its region, else from its level (OfLevel).
-    // Empty if the level is unknown and nothing is set by hand.
+    // Acts of a route: set by hand for its key, else for its region, else the act of its region (RegionAct),
+    // else, for a route the wiki doesn't know, from its guards' level (OfLevel). Empty if nothing is known.
     public static SortedSet<int> RouteActs(string key, int level, IReadOnlyDictionary<string, SortedSet<int>> manual, out bool isManual)
     {
         isManual = true;
@@ -114,7 +129,8 @@ public static class ActLogic
         if (region != null && manual.TryGetValue(region, out var byRegion)) return new SortedSet<int>(byRegion);
         isManual = false;
         var result = new SortedSet<int>();
-        int act = OfLevel(level);
+        int act = RegionAct(region);
+        if (act == 0) act = OfLevel(level);
         if (act > 0) result.Add(act);
         return result;
     }
