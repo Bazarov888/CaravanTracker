@@ -1,0 +1,56 @@
+name: release
+
+# A new version in CarriageTracker.csproj on main gets its GitHub Release by itself: tag v<version>,
+# CarriageTracker.dll and the Thunderstore package attached, the notes taken from CHANGELOG.md.
+# A version that already has a release is skipped, so nothing has to be done by hand.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(grep -m1 -o '<Version>[^<]*' CarriageTracker.csproj | cut -d'>' -f2)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Release v$v exists, nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-dotnet@v5
+        if: steps.v.outputs.new == 'true'
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+      - name: Tests of the decision logic
+        if: steps.v.outputs.new == 'true'
+        run: dotnet run --project tests -c Release
+      - name: Build
+        if: steps.v.outputs.new == 'true'
+        run: dotnet build -c Release
+      - name: Release
+        if: steps.v.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          {
+            echo "Install: put \`CarriageTracker.dll\` into \`BepInEx/plugins/CarriageTracker/\` on the server and restart it."
+            echo "Needs BepInExPack V Rising and VampireCommandFramework. The zip is the Thunderstore package."
+            echo
+            awk -v v="$VERSION" '$0 == "## " v { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md
+          } > notes.md
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "CarriageTracker $VERSION" --notes-file notes.md \
+            bin/Release/net6.0/CarriageTracker.dll "dist/CarriageTracker-$VERSION.zip"

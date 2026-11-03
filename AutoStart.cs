@@ -3,18 +3,19 @@ using System.Collections.Generic;
 using ProjectM;
 using Unity.Entities;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Auto-start. Every check the mod looks at the acts of online players (all of them or only the most
-// advanced one, see Scope). In each such act a caravan starts on a free route if at least IntervalMinutes
-// passed since the previous auto-start in that act and the MaxPerAct and MaxTotal limits allow it.
-// If an act has no routes, the nearest lower act with routes is used. Nobody online - nothing starts.
-// Routes from ExcludedRoutes are never used. Which routes are free and which one goes first is decided
-// by RouteLogic (IsFree, Choose).
+// advanced one, see Scope; how a player's act is found: PlayerAct). Each player act gets the caravans of its own
+// act, or of the act EmptyAct gives when it has no routes (act III). In each such route act a caravan starts on a
+// free route if at least IntervalMinutes passed since the previous auto-start in that act and the MaxPerAct and
+// MaxTotal limits allow it. Nobody online - nothing starts. Routes from ExcludedRoutes are never used. Which routes
+// are free and which one goes first is decided by RouteLogic (IsFree, Choose).
 static class AutoStart
 {
     static readonly Dictionary<int, DateTime> LastStart = new();
-    static readonly Dictionary<string, DateTime> LastRouteStart = new();
+    static readonly Dictionary<string, DateTime> LastRouteStart = new();   // by patrol ("index:version")
+    static bool _toldBloodcraft;
     static readonly Random Rng = new();
     static DateTime _ready = DateTime.MinValue;
     public static readonly List<string> LastResults = new();
@@ -43,7 +44,17 @@ static class AutoStart
         var world = Caravans.ServerWorld();
         var prefabs = world == null ? null : Caravans.Prefabs(world);
         if (prefabs == null) return;
-        if (_ready == DateTime.MinValue) { _ready = DateTime.UtcNow; return; }
+        if (_ready == DateTime.MinValue)
+        {
+            _ready = DateTime.UtcNow;
+            return;
+        }
+        if (!_toldBloodcraft)
+        {
+            _toldBloodcraft = true;
+            Plugin.Info($"CarriageTracker auto: player act by {Settings.PlayerActMode}, act without routes uses {Settings.EmptyActMode}; " +
+                        $"Bloodcraft {(Plugin.HasBloodcraft ? "found: the character level is its level" : "not found: the character level is the gear level")}");
+        }
         var results = Run(world.EntityManager, prefabs, false);
         if (results.Count == 0) return;
         // A start is always logged. A reason why nothing started (limit, busy routes) is logged
@@ -56,8 +67,8 @@ static class AutoStart
         foreach (var r in results)
         {
             LastResults.Add(r.Text);
-            if (r.Started) Plugin.Info($"CaravanTracker auto: {r.Text}");
-            else Plugin.Trace($"CaravanTracker auto: {r.Text}");
+            if (r.Started) Plugin.Info($"CarriageTracker auto: {r.Text}");
+            else Plugin.Trace($"CarriageTracker auto: {r.Text}");
         }
     }
 
@@ -92,10 +103,15 @@ static class AutoStart
         playerActs.Sort((a, b) => b.CompareTo(a));
 
         var routes = Routes.All(em, prefabs).FindAll(r => !Settings.Excluded(r.Key));
-        var routeActs = new Dictionary<(int, int), int>();
-        foreach (var r in routes) routeActs[(r.Patrol.Index, r.Patrol.Version)] = Acts.OfRoute(em, prefabs, r).Act;
-        int ActOf(Routes.Route r) => routeActs[(r.Patrol.Index, r.Patrol.Version)];
-        var actsWithRoutes = new HashSet<int>(routeActs.Values);
+        var routeActs = new Dictionary<(int, int), SortedSet<int>>();
+        var actsWithRoutes = new HashSet<int>();
+        foreach (var r in routes)
+        {
+            var acts = Acts.OfRoute(em, prefabs, r).Acts;
+            routeActs[(r.Patrol.Index, r.Patrol.Version)] = acts;
+            actsWithRoutes.UnionWith(acts);
+        }
+        bool InAct(Routes.Route r, int act) => routeActs[(r.Patrol.Index, r.Patrol.Version)].Contains(act);
 
         int interval = Math.Max(1, Settings.AutoInterval.Value);
         int maxPerAct = Math.Max(1, Settings.AutoMaxPerAct.Value);
@@ -103,14 +119,17 @@ static class AutoStart
         var served = new HashSet<int>();
         var now = DateTime.UtcNow;
 
+        // Route acts to serve, in the order of the player acts they serve.
+        var toServe = new List<int>();
         foreach (int playerAct in playerActs)
         {
-            int act = ActLogic.Served(playerAct, actsWithRoutes);
-            if (act < 1)
-            {
-                results.Add((false, L.T("auto.noroutes", L.Act(playerAct))));
-                continue;
-            }
+            var acts = ActLogic.Served(playerAct, actsWithRoutes, Settings.EmptyActMode);
+            if (acts.Count == 0) results.Add((false, L.T("auto.noroutes", L.Act(playerAct))));
+            foreach (int a in acts) if (!toServe.Contains(a)) toServe.Add(a);
+        }
+
+        foreach (int act in toServe)
+        {
             if (!served.Add(act)) continue;
             if (!force && now < LastOf(act).AddMinutes(interval)) continue;
 
@@ -124,7 +143,7 @@ static class AutoStart
                 results.Add((false, L.T("auto.maxact", L.Act(act), Starter.AutoCount(act), maxPerAct)));
                 continue;
             }
-            var candidates = routes.FindAll(r => ActOf(r) == act);
+            var candidates = routes.FindAll(r => InAct(r, act));
             var free = new List<Routes.Route>();
             var snaps = new List<RouteSnap>();
             foreach (var r in candidates)
@@ -140,14 +159,14 @@ static class AutoStart
                 continue;
             }
             int chosen = RouteLogic.Choose(snaps, Settings.ResetToStart.Value, Settings.RotatePick,
-                                           key => LastRouteStart.TryGetValue(key, out var t) ? t : DateTime.MinValue, Rng);
+                                           id => LastRouteStart.TryGetValue(id, out var t) ? t : DateTime.MinValue, Rng);
             var pick = free[chosen];
             Starter.Start(em, pick, Entity.Null, true, act,
                           $", picked from {free.Count} free: {RouteLogic.Groups(snaps)}, this one {RouteLogic.Group(snaps[chosen])}");
             var stops = Routes.StopsOf(em, pick.Patrol);
             LastStart[act] = now;
-            LastRouteStart[pick.Key] = now;
-            results.Add((true, L.T("auto.started", L.Route(pick.Key), L.Act(act), free.Count, Routes.StopText(stops))));
+            LastRouteStart[snaps[chosen].Ident] = now;
+            results.Add((true, L.T("auto.started", Routes.Name(pick), L.Act(act), free.Count, Routes.StopText(stops))));
         }
         return results;
     }

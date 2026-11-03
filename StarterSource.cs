@@ -10,7 +10,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Source = Mod: keeping the game from spawning caravans by itself.
 static partial class Starter
@@ -54,7 +54,7 @@ static partial class Starter
             if (Caravans.Field(sp, "PlayerRange") is not float2 range) continue;
             bool waiting = SpawnRange.Idle(sp.SpawnerState.ToString());
             if (modOnly && !waiting && BlockedRoutes.Contains(key) && Routes.ActiveUnits(em, r.Patrol).Count > 0 && WarnedRoutes.Add(key))
-                Plugin.Warn($"CaravanTracker: route {r.Key}: Source = Mod, but the game spawned a caravan on it by itself " +
+                Plugin.Warn($"CarriageTracker: route {r.Key}: Source = Mod, but the game spawned a caravan on it by itself " +
                                          $"(range {range.x}-{range.y}). The block doesn't work here; switch back with .cv source both and report it.");
             if (modOnly && waiting) BlockedRoutes.Add(key); else BlockedRoutes.Remove(key);
             if (SpawnRange.SourceTarget(modOnly, waiting, range.x, range.y) is not float y) continue;
@@ -62,7 +62,7 @@ static partial class Starter
             if (SpawnRange.IsBlocked(range.x, y)) blocked++; else opened++;
         }
         if (blocked > 0 || opened > 0)
-            Plugin.Trace($"CaravanTracker: source {Settings.Source.Value}: game spawning turned off on {blocked} routes, back on for {opened}");
+            Plugin.Trace($"CarriageTracker: source {Settings.Source.Value}: game spawning turned off on {blocked} routes, back on for {opened}");
         return blocked;
     }
 }

@@ -18,8 +18,11 @@ jobs:
         run: dotnet run --project tests -c Release
       - name: Build
         run: dotnet build -c Release
-      - name: Thunderstore package
+      # For trying a pull request on a server. Releases (with the DLL for download) come from release.yml.
+      - name: DLL and Thunderstore package
         uses: actions/upload-artifact@v6
         with:
-          name: CaravanTracker
-          path: dist/*.zip
+          name: CarriageTracker
+          path: |
+            bin/Release/net6.0/CarriageTracker.dll
+            dist/*.zip

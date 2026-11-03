@@ -2,15 +2,15 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <AssemblyName>CaravanTracker</AssemblyName>
-    <RootNamespace>CaravanTracker</RootNamespace>
+    <AssemblyName>CarriageTracker</AssemblyName>
+    <RootNamespace>CarriageTracker</RootNamespace>
     <!-- The only place the version and the plugin identity are written. MyPluginInfo (used by the code)
          and the Thunderstore manifest.json are generated from these at build time. -->
-    <Version>1.0.10</Version>
-    <PluginGuid>Bazarov.CaravanTracker</PluginGuid>
-    <PluginName>CaravanTracker</PluginName>
-    <Description>Caravans on the map for everyone, chat announcements when they set out, and automatic caravan starts in every act where players are online.</Description>
-    <WebsiteUrl>https://github.com/Bazarov888/CaravanTracker</WebsiteUrl>
+    <Version>1.0.11</Version>
+    <PluginGuid>CarriageTracker</PluginGuid>
+    <PluginName>CarriageTracker</PluginName>
+    <Description>Carriages on the map for everyone, chat announcements when they set out, and automatic carriage starts in every act where players are online.</Description>
+    <WebsiteUrl>https://github.com/Bazarov888/CarriageTracker</WebsiteUrl>
     <Authors>Bazarov</Authors>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -53,8 +53,8 @@
   <Target Name="GenerateMyPluginInfo" BeforeTargets="CoreCompile">
     <PropertyGroup>
       <MyPluginInfoFile>$(IntermediateOutputPath)MyPluginInfo.g.cs</MyPluginInfoFile>
-      <MyPluginInfoText>// Generated from CaravanTracker.csproj at build time. Change the version there.
-namespace CaravanTracker
+      <MyPluginInfoText>// Generated from CarriageTracker.csproj at build time. Change the version there.
+namespace CarriageTracker
 {
     public static class MyPluginInfo
     {
@@ -71,7 +71,7 @@ namespace CaravanTracker
     </ItemGroup>
   </Target>
 
-  <!-- Release build also makes the Thunderstore package: dist/CaravanTracker-<version>.zip,
+  <!-- Release build also makes the Thunderstore package: dist/CarriageTracker-<version>.zip,
        with manifest.json generated from the properties above. -->
   <Target Name="ThunderstorePackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <PropertyGroup>
@@ -90,7 +90,7 @@ namespace CaravanTracker
     <RemoveDir Directories="$(PkgDir)" />
     <Copy SourceFiles="README.md;CHANGELOG.md;icon.png;LICENSE;$(TargetPath)" DestinationFolder="$(PkgDir)" />
     <WriteLinesToFile File="$(PkgDir)/manifest.json" Lines="$(ManifestText)" Overwrite="true" />
-    <ZipDirectory SourceDirectory="$(PkgDir)" DestinationFile="$(MSBuildProjectDirectory)/dist/CaravanTracker-$(Version).zip" Overwrite="true" />
+    <ZipDirectory SourceDirectory="$(PkgDir)" DestinationFile="$(MSBuildProjectDirectory)/dist/CarriageTracker-$(Version).zip" Overwrite="true" />
     <RemoveDir Directories="$(PkgDir)" />
   </Target>
 

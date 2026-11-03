@@ -7,19 +7,19 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Announcement to online players, two lines. The first one: which caravan and of which act.
 // The second one is personal: distance, direction and the mark command with this caravan's number in their .cv l.
 // Who gets it is set by AnnounceTo: everyone, players of the caravan's act, or players within AnnounceRadius.
 static class Announcer
 {
-    public static void CaravanStarted(EntityManager em, PrefabCollectionSystem prefabs, string route, Entity cart, float3 pos)
+    public static void CaravanStarted(EntityManager em, PrefabCollectionSystem prefabs, string route, Entity patrol, Entity cart, float3 pos)
     {
-        int act = 0;
-        try { act = Acts.OfRouteKey(em, prefabs, route); }
-        catch (Exception e) { Plugin.Warn($"CaravanTracker: act of route {route} unknown: {e.Message}"); }
-        bool sameAct = Settings.AnnounceSameAct && act > 0;
+        var acts = new SortedSet<int>();
+        try { acts = Acts.OfRouteKey(em, prefabs, route); }
+        catch (Exception e) { Plugin.Warn($"CarriageTracker: act of route {route} unknown: {e.Message}"); }
+        bool sameAct = Settings.AnnounceSameAct && acts.Count > 0;
         bool nearby = Settings.AnnounceNearby;
         float radius = Math.Max(100, Settings.AnnounceRadius.Value);
         var withRoutes = sameAct ? Acts.WithRoutes(em, prefabs) : null;
@@ -40,7 +40,7 @@ static class Announcer
             {
                 var user = em.GetComponentData<User>(ue);
                 if (!user.IsConnected) continue;
-                if (sameAct && Acts.Served(Acts.OfUser(em, prefabs, ue).Act, withRoutes) != act) continue;
+                if (sameAct && !Acts.Served(Acts.OfUser(em, prefabs, ue).Act, withRoutes).Exists(acts.Contains)) continue;
                 string where = "";
                 string mark = ".cv m";
                 var character = user.LocalCharacter.GetEntityOnServer();
@@ -52,7 +52,7 @@ static class Announcer
                 L.Use(user.PlatformId);
                 try
                 {
-                    string name = L.Route(route) + (act > 0 ? " (" + L.Act(act) + ")" : "");
+                    string name = Routes.Name(route, patrol) + (acts.Count > 0 ? " (" + L.ActList(acts) + ")" : "");
                     string head = $"<color={title}><b>{L.T("announce.title", name)}</b></color>";
                     if (hasCharacter)
                     {
@@ -72,7 +72,7 @@ static class Announcer
             users.Dispose();
             query.Dispose();
         }
-        Plugin.Trace($"CaravanTracker: announcement of {route} sent to {sent} players");
+        Plugin.Trace($"CarriageTracker: announcement of {route} sent to {sent} players");
     }
 
     // Number of the caravan in the player's list (.cv l sorts by distance from them). 0 if not found.
@@ -146,7 +146,7 @@ static class Greeter
             foreach (var lang in own != null ? new[] { own } : new[] { "en", "ru" })
                 Chat.Send(em, users[id], Line(lang));
         }
-        if (greet.Count > 0) Plugin.Trace($"CaravanTracker: welcome sent to {greet.Count} players");
+        if (greet.Count > 0) Plugin.Trace($"CarriageTracker: welcome sent to {greet.Count} players");
     }
 
     // The server's own text from the config (WelcomeEn / WelcomeRu), or the mod's with the commands highlighted.
@@ -173,6 +173,19 @@ static class Tracker
     public static List<Caravans.Caravan> Current => _caravans;
     static HashSet<(int, int)> _announced = new();
     static bool _primed;
+    static bool _repaired;
+    static int _repairTries;
+    static DateTime _lastTick = DateTime.MinValue;
+    // Objects only the full search found: looked at again on every check, so they stay in the list between
+    // two full searches instead of dropping out until the next one.
+    static readonly Dictionary<(int, int), Entity> _missed = new();
+
+    // Player commands (.cv l, .cv m) read the list of the last check and refresh it only if it is older than
+    // MinRefresh, so commands typed in a row don't each run a whole search (audit 02.11: until 1.0.10 every
+    // .cv l ran one).
+    public static readonly TimeSpan MinRefresh = TimeSpan.FromSeconds(5);
+
+    public static bool Fresh() => DateTime.UtcNow - _lastTick < MinRefresh || Tick(false);
 
     // Every time a fast search. A full pass runs on schedule or on command;
     // it also checks whether the fast search missed a caravan.
@@ -187,6 +200,15 @@ static class Tracker
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         var found = Caravans.FastScan(em, prefabs, out int scanned);
+        var fast = new HashSet<(int, int)>();
+        foreach (var f in found) fast.Add((f.Entity.Index, f.Entity.Version));
+        foreach (var kv in new List<KeyValuePair<(int, int), Entity>>(_missed))
+        {
+            var again = fast.Contains(kv.Key) ? null : Caravans.Recheck(em, prefabs, kv.Value);
+            if (again == null) { _missed.Remove(kv.Key); continue; }
+            found.Add(again);
+            fast.Add(kv.Key);
+        }
         long fastMs = sw.ElapsedMilliseconds;
 
         int safetyMin = Settings.SafetyScanMinutes.Value;
@@ -198,30 +220,37 @@ static class Tracker
             _lastSafetyMs = fsw.ElapsedMilliseconds;
             _lastSafetyAt = now;
             _nextSafety = now.AddMinutes(Math.Max(1, safetyMin));
-            var fast = new HashSet<(int, int)>();
-            foreach (var f in found) fast.Add((f.Entity.Index, f.Entity.Version));
             _lastMissed = 0;
             foreach (var f in all)
             {
-                if (f.Kind == Kind.Horse || fast.Contains((f.Entity.Index, f.Entity.Version))) continue;
+                var key = (f.Entity.Index, f.Entity.Version);
+                if (f.Kind == Kind.Horse || fast.Contains(key)) continue;
                 _lastMissed++;
                 found.Add(f);
-                Plugin.Warn($"CaravanTracker: fast search missed {f.Kind} on route {f.Route}");
+                _missed[key] = f.Entity;
+                Plugin.Warn($"CarriageTracker: fast search missed {f.Kind} on route {f.Route}; it is looked at on every check from now on");
             }
         }
 
         var built = Caravans.Build(found);
         if (_primed) LogGone(em, _caravans, built);
         else if (built.Count > 0)
-            Plugin.Info($"CaravanTracker: on the map at start: " +
+            Plugin.Info($"CarriageTracker: on the map at start: " +
                                   string.Join("; ", built.ConvertAll(c => $"{c.Route} {c.State} at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)})")));
         _caravans = built;
 
         // First check after the server start: routes left with start settings by a crash get normal values back.
-        if (!_primed)
+        // If the pass itself fails it is tried again on the next checks (a single route that fails is queued by
+        // RepairLeftovers and retried every 5 seconds).
+        if (!_repaired && _repairTries < 10)
         {
-            try { Starter.RepairLeftovers(em, prefabs); }
-            catch (Exception e) { Plugin.Error($"CaravanTracker: repair of routes failed: {e}"); }
+            _repairTries++;
+            try
+            {
+                Starter.RepairLeftovers(em, prefabs);
+                _repaired = true;
+            }
+            catch (Exception e) { Plugin.Error($"CarriageTracker: repair of routes failed (try {_repairTries} of 10): {e}"); }
         }
 
         // Announcement: once per cart, when it is first seen moving on the map (the game spawned it next to
@@ -245,16 +274,17 @@ static class Tracker
             announced.Add(key);
             bool byMod = f.Patrol != Entity.Null && Starter.IsRunning(f.Patrol);
             string stops = f.Stops != null ? $", stop {f.Stops.Log}" : "";
-            Plugin.Info($"CaravanTracker: caravan {f.Route} set out at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}){stops}{(byMod ? ", started by the mod" : "")}");
+            Plugin.Info($"CarriageTracker: caravan {f.Route} set out at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}){stops}{(byMod ? ", started by the mod" : "")}");
             if (Settings.Announce.Value && (byMod || Settings.AnnounceVanilla.Value))
-                Announcer.CaravanStarted(em, prefabs, f.Route, f.Entity, f.Pos);
+                Announcer.CaravanStarted(em, prefabs, f.Route, f.Patrol, f.Entity, f.Pos);
         }
         _announced = announced;
         _primed = true;
+        _lastTick = now;
         if (!paused)
         {
             try { Greeter.Tick(em); }
-            catch (Exception e) { Plugin.Warn($"CaravanTracker: welcome failed: {e.Message}"); }
+            catch (Exception e) { Plugin.Warn($"CarriageTracker: welcome failed: {e.Message}"); }
         }
 
         bool proxyMode = Settings.ProxyMode;
@@ -283,7 +313,7 @@ static class Tracker
                      (globalized > 0 ? L.T("stats.globalized", globalized) : "") + "." +
                      (_lastSafetyMs >= 0 ? " " + L.T("stats.safety", Math.Round((now - _lastSafetyAt).TotalMinutes), _lastMissed) : "");
         if (created > 0 || removed > 0 || globalized > 0)
-            Plugin.Trace($"CaravanTracker: check {ms} ms (fast {fastMs} ms over {scanned}), caravans {_caravans.Count}, " +
+            Plugin.Trace($"CarriageTracker: check {ms} ms (fast {fastMs} ms over {scanned}), caravans {_caravans.Count}, " +
                                   $"empty containers {empty}, icons added {created}, removed {removed}, made global {globalized}");
         return true;
     }
@@ -302,7 +332,7 @@ static class Tracker
             var route = c.Patrol != Entity.Null && em.Exists(c.Patrol) ? Routes.Snap(em, c.Patrol, c.Route) : null;
             var why = GoneLogic.Reason(c.State == "loot", c.Stops, exists, onMap, route);
             string routeNow = route == null ? "" : $"; route now {route.Move}, units {route.Units}, stop {route.Stops?.Log}";
-            Plugin.Info($"CaravanTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{routeNow}");
+            Plugin.Info($"CarriageTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{routeNow}");
         }
     }
 }

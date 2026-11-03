@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // A chat message reaches the player as 512 bytes at most (VampireCommandFramework also cuts replies at
 // 509 characters), and a Russian letter takes 2 bytes. Lists are therefore packed into several lines.

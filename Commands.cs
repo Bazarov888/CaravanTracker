@@ -8,9 +8,9 @@ using Unity.Entities;
 using Unity.Mathematics;
 using VampireCommandFramework;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
-[CommandGroup("caravan", "cv")]
+[CommandGroup("carriage", "cv")]
 public class Commands
 {
     static bool Ready(ChatCommandContext ctx, out EntityManager em, out PrefabCollectionSystem prefabs)
@@ -27,7 +27,7 @@ public class Commands
     {
         em = default;
         var world = Caravans.ServerWorld();
-        if (world == null || !Tracker.Tick(false)) { ctx.Reply(L.T("world.notready")); return null; }
+        if (world == null || !Tracker.Fresh()) { ctx.Reply(L.T("world.notready")); return null; }
         em = world.EntityManager;
         float3 me = Caravans.PositionOf(em, ctx.Event.SenderCharacterEntity);
         var result = new List<(Caravans.Caravan C, float Dist, string Dir)>();
@@ -49,7 +49,7 @@ public class Commands
         for (int i = 0; i < list.Count; i++)
         {
             var (c, dist, dir) = list[i];
-            ctx.Reply(L.T("list.item", i + 1, L.Route(c.Route), Math.Round(dist), dir, c.Note));
+            ctx.Reply(L.T("list.item", i + 1, Routes.Name(c.Route, c.Patrol), Math.Round(dist), dir, c.Note));
         }
     }
 
@@ -63,7 +63,7 @@ public class Commands
 
         var (c, dist, dir) = list[number - 1];
         SetMarker(ctx, em, c.Pos);
-        ctx.Reply(L.T("mark.ok", L.Route(c.Route), Math.Round(dist), dir, c.Note));
+        ctx.Reply(L.T("mark.ok", Routes.Name(c.Route, c.Patrol), Math.Round(dist), dir, c.Note));
     }
 
     // The player's own map marker (the one set by clicking the map), with the path to it.
@@ -87,7 +87,7 @@ public class Commands
         var pos = Caravans.PositionOf(em, r.Patrol);
         float3 me = Caravans.PositionOf(em, ctx.Event.SenderCharacterEntity);
         SetMarker(ctx, em, pos);
-        ctx.Reply(L.T("routemark.ok", L.Route(r.Key), Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z)));
+        ctx.Reply(L.T("routemark.ok", Routes.Name(r), Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z)));
     }
 
     // .cv routes and .cv rm show where every route is; RouteCommandsForAll = false keeps them for admins.
@@ -98,7 +98,7 @@ public class Commands
         return false;
     }
 
-    [Command("routes", shortHand: "r", description: "All caravan routes with level, act and state")]
+    [Command("routes", shortHand: "r", description: "All carriage routes with region, level, act and state")]
     public void RoutesList(ChatCommandContext ctx)
     {
         if (!RouteCommandAllowed(ctx) || !Ready(ctx, out var em, out var prefabs)) return;
@@ -111,21 +111,26 @@ public class Commands
             var pos = Caravans.PositionOf(em, r.Patrol);
             var act = Acts.OfRoute(em, prefabs, r);
             string stops = Routes.StopText(Routes.StopsOf(em, r.Patrol));
-            ctx.Reply(L.T("routes.item", i + 1, L.Route(r.Key), r.Key, act.Level, L.Act(act.Act), act.Manual ? L.T("routes.manual") : "",
+            ctx.Reply(L.T("routes.item", i + 1, Routes.Name(r), r.Key, act.Level, L.ActList(act.Acts), act.Manual ? L.T("routes.manual") : "",
                           Routes.Describe(em, r.Patrol), Starter.IsRunning(r.Patrol) ? L.T("routes.running") : "",
                           Math.Round(Caravans.Dist2(pos, me)), Caravans.Direction(pos.x - me.x, pos.z - me.z),
-                          stops.Length > 0 ? ", " + stops : "", Settings.Excluded(r.Key) ? L.T("routes.excluded") : ""));
+                          stops.Length > 0 ? ", " + stops : "", Settings.Excluded(r.Key) ? L.T("routes.excluded") : "",
+                          L.Region(ActLogic.Region(r.Key))));
         }
     }
 
-    [Command("act", shortHand: "a", description: "Your act by V Blood drunk and the caravan routes of that act")]
+    [Command("act", shortHand: "a", description: "Your act (by V Blood or level, see PlayerAct) and the carriage routes you get")]
     public void Act(ChatCommandContext ctx)
     {
         if (!Ready(ctx, out var em, out var prefabs)) return;
         var mine = Acts.OfUser(em, prefabs, ctx.Event.SenderUserEntity);
-        ctx.Reply(mine.Boss == null
-            ? L.T("act.none")
-            : L.T("act.mine", L.Act(mine.Act), mine.Drunk, mine.Boss, mine.BossLevel));
+        string by = mine.ByLevel ? L.T("act.bylevel", mine.Level) : "";
+        string text = mine.Boss == null
+            ? L.T("act.none", L.Act(mine.Act), by)
+            : L.T("act.mine", L.Act(mine.Act), by, mine.Drunk, mine.Boss, mine.BossLevel);
+        if (mine.Opened > 0 && mine.ByVBlood == mine.Opened + 1 && !mine.ByLevel) text += L.T("act.next", L.Act(mine.Opened), L.Act(mine.ByVBlood));
+        if (Settings.PlayerActMode != PlayerActBy.VBlood && !mine.ByLevel && mine.Level > 0) text += L.T("act.level", mine.Level);
+        ctx.Reply(text);
 
         var online = Acts.Online(em, prefabs);
         if (online.Count > 1)
@@ -135,14 +140,17 @@ public class Commands
             foreach (var line in ChatLines.Pack(parts, ", ", L.T("act.online", ""))) ctx.Reply(line);
         }
 
+        var served = Acts.Served(mine.Act, Acts.WithRoutes(em, prefabs));
+        if (served.Count == 0) { ctx.Reply(L.T("act.noroutes", L.Act(mine.Act))); return; }
+        if (!served.Contains(mine.Act)) ctx.Reply(L.T("act.empty", L.Act(mine.Act), L.ActList(served)));
         var names = new List<string>();
         foreach (var r in Routes.All(em, prefabs))
         {
-            string n = L.Route(r.Key);
-            if (Acts.OfRoute(em, prefabs, r).Act == mine.Act && !names.Contains(n)) names.Add(n);
+            if (Settings.Excluded(r.Key)) continue;
+            string n = Routes.Name(r);
+            if (Acts.OfRoute(em, prefabs, r).Acts.Overlaps(served) && !names.Contains(n)) names.Add(n);
         }
-        if (names.Count == 0) ctx.Reply(L.T("act.noroutes", L.Act(mine.Act)));
-        else foreach (var line in ChatLines.Pack(names, ", ", L.T("act.routes", L.Act(mine.Act), ""))) ctx.Reply(line);
+        foreach (var line in ChatLines.Pack(names, ", ", L.T("act.routes", L.ActList(served), ""))) ctx.Reply(line);
     }
 
     // ---- admin: map icons ----
@@ -186,7 +194,7 @@ public class Commands
             list.Add((name, kv.Key.GuidHash));
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-        foreach (var i in list) Plugin.Info($"CaravanTracker icon: {i.Name} {i.Guid}");
+        foreach (var i in list) Plugin.Info($"CarriageTracker icon: {i.Name} {i.Guid}");
 
         const int perPage = 15;
         int pages = Math.Max(1, (list.Count + perPage - 1) / perPage);
@@ -290,7 +298,7 @@ public class Commands
             if (v == null) { ctx.Reply("mod | game | both"); return; }
             Settings.Source.Value = v;
             Settings.Save();
-            Plugin.Info($"CaravanTracker: source set to {v} by command");
+            Plugin.Info($"CarriageTracker: source set to {v} by command");
             if (v != "Game") AutoStart.Restart();
             Starter.ApplySource(em, prefabs);
         }
@@ -303,7 +311,7 @@ public class Commands
         if (!Ready(ctx, out var em, out var prefabs)) return;
         var r = Starter.Cleanup(em, prefabs);
         Tracker.Tick(false);
-        Plugin.Info($"CaravanTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
+        Plugin.Info($"CarriageTracker: cleanup by command: stopped {r.Runs} starts, restored {r.Routes} routes and {r.Units} units, " +
                               "icons removed; the mod changes nothing more until the server restarts");
         ctx.Reply(L.T("cleanup.ok", r.Runs, r.Routes, r.Units));
     }
@@ -316,7 +324,7 @@ public class Commands
         if (results.Count == 0) { ctx.Reply(L.T("auto.nothing")); return; }
         foreach (var r in results)
         {
-            Plugin.Info($"CaravanTracker auto (command): {r.Text}");
+            Plugin.Info($"CarriageTracker auto (command): {r.Text}");
             ctx.Reply(r.Text);
         }
     }

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // What the game tells about one route at one moment. Built by Routes.Snap from the patrol entity;
 // every decision about a route is made from this alone.
@@ -14,10 +14,14 @@ public sealed record RouteSnap(
     int UnitsOnMap,       // of them not frozen off the map at (10000, 10000)
     int Carts,            // carts pulled by the squad's horses
     bool Running,         // the mod is starting this route now
-    bool FailedRecently)  // a start of this route failed within the last hour
+    bool FailedRecently,  // a start of this route failed within the last hour
+    string Id = null)     // this patrol ("index:version"): two patrols share the key MilitiaCotton
 {
     public bool AtEndState => Move == "WaitForDespawn";
     public bool WaitingForSpawn => Spawner == "WaitingForSpawn";
+    public bool Loop => Stops != null && Stops.Loop;
+    // What start history is kept by: the patrol, or the key if the patrol isn't known.
+    public string Ident => Id ?? Key;
 }
 
 public enum RouteState
@@ -27,6 +31,7 @@ public enum RouteState
     OnRoad,          // a squad with its cart
     CartLost,        // the cart is destroyed, the rest of the squad walks to the end of the route
     FrozenLeftover,  // what is left of a robbed caravan froze off the map, it would stand there until a player comes
+    LoopLeftover,    // the cart is destroyed on a route without an end, players are near: the rest circles on
     AtEnd,           // at the last stop (WaitForDespawn): the game removes the squad and returns the route to the start
     Empty,           // no squad: waits for a new caravan at the stop it stands at
 }
@@ -43,18 +48,23 @@ public static class RouteLogic
         if (s.AtEndState) return RouteState.AtEnd;
         if (s.Units == 0) return RouteState.Empty;
         if (s.Carts > 0) return RouteState.OnRoad;
-        return s.UnitsOnMap == 0 ? RouteState.FrozenLeftover : RouteState.CartLost;
+        if (s.UnitsOnMap == 0) return RouteState.FrozenLeftover;
+        return s.Loop ? RouteState.LoopLeftover : RouteState.CartLost;
     }
 
     // A route the mod may start: nothing of the mod's runs there, and no caravan on the road.
     // A start removes leftovers (a squad at the end, a frozen horse without its cart) like any stuck squad.
+    // On an ordinary route the rest of a robbed caravan walks to the end, where the game removes it. On a loop it
+    // never would: it stays busy while players are near (they may still be fighting it) and becomes a
+    // FrozenLeftover, free, once nobody is (the run ends with the cart, so it may freeze: RunEnd.LoopCartLost).
     public static bool IsFree(RouteState state) =>
         state == RouteState.Empty || state == RouteState.AtEnd || state == RouteState.FrozenLeftover;
 
-    // Where a free route stands, for the pick order and the log.
+    // Where a free route stands, for the pick order and the log. A route without an end has no "mid-way":
+    // it counts as standing at its start.
     public static PickGroup Group(RouteSnap s)
     {
-        if (s.Stops == null || s.Stops.AtStart) return PickGroup.AtStart;
+        if (s.Stops == null || s.Stops.AtStart || s.Loop) return PickGroup.AtStart;
         return s.AtEndState ? PickGroup.AtEnd : PickGroup.Midway;
     }
 
@@ -63,7 +73,8 @@ public static class RouteLogic
     // first stop (a route at its last stop is woken first, see RunLogic.ReadyToArm). Routes left mid-way by an
     // earlier caravan come after them.
     // Within a group: rotate takes the route the mod started longest ago (lastStart gives DateTime.MinValue for
-    // never); otherwise a random one, but not the route started last while another one is there. Without that a
+    // never; it is asked by RouteSnap.Ident, the patrol, so the two MilitiaCotton patrols keep their own history);
+    // otherwise a random one, but not the route started last while another one is there. Without that a
     // route that just finished stood at its first stop again and was picked over and over (31.10: MilitiaCotton
     // five times in a row while routes at their last stop waited). Mid-way routes without ResetToStart: the one
     // with the most stops left, so the caravan drives the longest way.
@@ -86,12 +97,12 @@ public static class RouteLogic
         int oldest = idx[0], newest = idx[0];
         foreach (int i in idx)
         {
-            if (lastStart(free[i].Key) < lastStart(free[oldest].Key)) oldest = i;
-            if (lastStart(free[i].Key) > lastStart(free[newest].Key)) newest = i;
+            if (lastStart(free[i].Ident) < lastStart(free[oldest].Ident)) oldest = i;
+            if (lastStart(free[i].Ident) > lastStart(free[newest].Ident)) newest = i;
         }
         if (rotate) return oldest;
         var pool = new List<int>(idx);
-        if (pool.Count > 1 && lastStart(free[newest].Key) != DateTime.MinValue) pool.Remove(newest);
+        if (pool.Count > 1 && lastStart(free[newest].Ident) != DateTime.MinValue) pool.Remove(newest);
         return pool[rng.Next(pool.Count)];
     }
 
@@ -107,7 +118,8 @@ public static class RouteLogic
     }
 
     // A route to put back to the first stop before a start: it stands mid-way. A route at its last stop
-    // isn't touched: the game returns it to the start by itself.
+    // isn't touched: the game returns it to the start by itself. A route without an end isn't either:
+    // a caravan there may set out from any stop.
     public static bool NeedsReset(Progress stops, string move) =>
-        stops != null && !stops.AtStart && move != "WaitForDespawn";
+        stops != null && !stops.Loop && !stops.AtStart && move != "WaitForDespawn";
 }

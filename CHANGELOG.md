@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.11
+
+- The mod is now called CarriageTracker, after the game's own name for caravans: `CarriageTracker.dll` in `BepInEx/plugins/CarriageTracker/`, plugin `CarriageTracker`, repository [Bazarov888/CarriageTracker](https://github.com/Bazarov888/CarriageTracker). `Bazarov.CaravanTracker.cfg` and the players' languages file move to the new names on the first start. While the old `CaravanTracker.dll` is still installed, the new mod writes an error to the log and does nothing; `tools/deploy.sh` removes the old folder. Commands stay `.cv`. English chat says "carriage".
+- Fixed the animal of a carriage that took no damage, also after its cart was destroyed. It happened to squads of routes woken at their last stop: the game's spawn buff `Buff_General_Spawn_Unit` stayed on the animal. Such a buff still on a unit or cart of a start 10 seconds after it appeared is now removed, and the log says so.
+- A player's act moves on as soon as the strongest V Blood of their act is drunk (Quincey, Octavian, Cyril). Before, a player who had beaten act II still got act II carriages until they drank an act III V Blood.
+- Act III has no carriages in the game (none in Gloomrot and the Cursed Forest). A player in an act without routes now gets the next act up, so act III players get the Silverlight and Oakveil carriages. New setting `EmptyAct`: `Higher` (default), `Lower` (as before) or `Both`.
+- New setting `PlayerAct`: `VBlood` (default), `Level` (by the character's level; with Bloodcraft leveling that is the Bloodcraft level) or `Highest`.
+- `RouteActs` takes regions (`Farbane`, `Dunley`, `Silverlight`, `Oakveil`) and several acts per entry, e.g. `Silverlight=3+4,Oakveil=4`. `.cv r` shows each route's region; `.cv a` shows how the act was found and which routes you get.
+- Route names follow the wiki: Venom Blades emery and venom sap routes, the Draculin prison carriage; the two `MilitiaCotton` routes are told apart as east and west.
+- The two Oakveil routes have no end: they are no longer put back to the start and count as ready when a route is picked. The mod stops looking after a carriage there when its cart is destroyed, so what is left can freeze once nobody is near and the route is free again; before, the mod kept it awake and the route busy for up to `MaxRunMinutes`.
+- A route woken at its last stop that doesn't go back to its first stop within 20 seconds is given up and skipped for an hour, instead of spawning its squad at the end of the route.
+- A fight right at the start no longer removes the guards still on their way: a new unit after a loss is a replacement only once the squad has reached its size.
+- Fixes from the code audit of 02.11:
+  - Markers of other mods (KindredPortals) are no longer removed; the mod touches only its own markers.
+  - The route's own settings count as restored only after they were written. A write that fails is tried again, also at the end of a start and at the server start.
+  - Unloading the mod at runtime stops its work and gives the world its settings back, as `.cv cleanup` does.
+  - `.cv l` and `.cv m` read the last check instead of running a search each time; they refresh it at most every 5 seconds.
+  - With `GlobalIcons = false` new markers no longer cause a search on every frame for 10 seconds.
+  - The two `MilitiaCotton` patrols keep their own start history and failures.
+  - A failed read of the languages file no longer loses the players' choices; the file is written through a temporary file and only when something changed.
+  - An object only the full search found stays in the list between full searches.
+  - `tools/deploy.sh` stops on local changes in the repository, prints the commit it installs and replaces the DLL in one step.
+- Releases: a new version merged into `main` gets a GitHub Release with `CarriageTracker.dll` and the Thunderstore package by itself. README's installation points there; the CI artifact, which needed a GitHub login, is no longer the way to get the mod.
+
 ## 1.0.10
 
 - A route woken at its last stop now spawns its squad only after the game has finished removing the old one (spawner idle again) and the route has stood at its first stop for 3 seconds. In 1.0.8 the squad spawned one second after the reset: its animal took no damage, even after the cart was destroyed, and a squad that reached the end stayed there instead of being removed.

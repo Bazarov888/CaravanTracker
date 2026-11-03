@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Chat texts in English and Russian. Each player can pick their own language (.cv lang, see Languages);
 // General.Language in the config is the default. Placeholders {0}, {1}... are filled in the order the code
@@ -46,14 +46,26 @@ static class L
     }
 
     // Readable route name. An unknown route (e.g. added by a game update) shows its key.
-    public static string Route(string key)
+    // side: "east" / "west" for the two patrols of one key (Routes.Route.Side).
+    public static string Route(string key, string side = null)
     {
         if (string.IsNullOrEmpty(key)) return "?";
         var table = Russian ? Ru : En;
-        return table.TryGetValue("route." + key, out var t) || En.TryGetValue("route." + key, out t) ? t : key;
+        string name = table.TryGetValue("route." + key, out var t) || En.TryGetValue("route." + key, out t) ? t : key;
+        return side == null ? name : name + T("side." + side);
     }
 
     public static string Act(int act) => act >= 1 && act <= 4 ? T("act.name", Acts.Roman(act)) : T("act.unknown");
+
+    // "Act III+IV" for a route or a player served by several acts.
+    public static string ActList(IEnumerable<int> acts)
+    {
+        var romans = new List<string>();
+        foreach (int a in acts) if (a >= 1 && a <= 4) romans.Add(Acts.Roman(a));
+        return romans.Count == 0 ? T("act.unknown") : T("act.name", string.Join("+", romans));
+    }
+
+    public static string Region(string region) => region == null ? "?" : T("region." + region);
 
     static readonly Dictionary<string, string> En = new()
     {
@@ -62,16 +74,23 @@ static class L
         ["act.name"] = "Act {0}",
         ["act.unknown"] = "act ?",
 
+        ["side.east"] = ", east",
+        ["side.west"] = ", west",
+        ["region.Farbane"] = "Farbane Woods",
+        ["region.Dunley"] = "Dunley Farmlands",
+        ["region.Silverlight"] = "Silverlight Hills",
+        ["region.Oakveil"] = "Oakveil Woodlands",
+
         ["route.BanditAnimal"] = "Bandits: animals",
         ["route.BanditCopper"] = "Bandits: copper",
         ["route.BanditPlank"] = "Bandits: planks",
         ["route.BanditPrisoners"] = "Bandits: prisoners",
         ["route.BanditSulfur"] = "Bandits: sulfur",
-        ["route.BlackfangBastion"] = "Blackfang: bastion",
-        ["route.BlackfangSouth"] = "Blackfang: south",
+        ["route.BlackfangBastion"] = "Venom Blades: emery",
+        ["route.BlackfangSouth"] = "Venom Blades: venom sap and oak",
         ["route.ChuchGrape"] = "Church: grapes",
         ["route.ChuchSilver"] = "Church: silver",
-        ["route.ChurchLegion"] = "Church: legion",
+        ["route.ChurchLegion"] = "Church: Draculin prisoners",
         ["route.ChurchMutants"] = "Church: mutants",
         ["route.MilitiaCotton"] = "Militia: cotton",
         ["route.MilitiaIron"] = "Militia: iron",
@@ -90,14 +109,14 @@ static class L
         ["note.moving"] = " (on the road{0})",
         ["note.frozen"] = " (froze mid-route, no players near; wakes up when you come near; {0}{1})",
 
-        ["announce.title"] = "CARAVAN ON THE ROAD: {0}",
+        ["announce.title"] = "CARRIAGE ON THE ROAD: {0}",
         ["announce.where"] = "{0} m, {1}.",
         ["announce.mark"] = "Map marker:",
 
         ["stats.none"] = "No check has run yet.",
         ["stats.main"] = "Mode {0}. Check: {1} ms, fast search {2} ms over {3} objects",
         ["stats.full"] = ", full search {0} ms",
-        ["stats.counts"] = "Caravans: {0}, empty containers: {1}, frozen without players: {2}",
+        ["stats.counts"] = "Carriages: {0}, empty containers: {1}, frozen without players: {2}",
         ["stats.parked"] = ", parked off the map without a patrol point: {0}",
         ["stats.icons"] = "Icons added: {0}, removed: {1}",
         ["stats.globalized"] = ", made visible on the whole map: {0}",
@@ -106,53 +125,59 @@ static class L
         ["route.state.endguarded"] = "reached the end, frozen with guards",
         ["route.state.endempty"] = "stuck at the end of the route, empty",
         ["route.state.waiting"] = "waiting to spawn",
-        ["route.state.nocart"] = "cart destroyed, the horse walks to the end",
+        ["route.state.nocart"] = "cart destroyed, the animal walks to the end",
+        ["route.state.loopleft"] = "cart destroyed, the rest circles the route",
         ["route.state.moving"] = "on the road",
         ["route.state.other"] = "{0}/{1}, units {2}",
 
-        ["start.already"] = "Caravan {0} is already being started.",
-        ["start.ok"] = "Starting caravan {0}. Removed stuck: units {1}, carts {2}. The squad appears where the route stands ({3}) within a minute, then players get an announcement.",
-        ["start.midway"] = " The route stands mid-way, left there by an earlier caravan, so this one sets out from there.",
+        ["start.already"] = "Carriage {0} is already being started.",
+        ["start.ok"] = "Starting carriage {0}. Removed stuck: units {1}, carts {2}. The squad appears where the route stands ({3}) within a minute, then players get an announcement.",
+        ["start.midway"] = " The route stands mid-way, left there by an earlier carriage, so this one sets out from there.",
         ["start.reset"] = " The route stood mid-way ({0}), it was put back to the start.",
-        ["start.spawned"] = "Caravan {0} appeared and sets out.",
-        ["start.failed"] = "Caravan {0} didn't appear in {1} min. See the server log (lines \"CaravanTracker start\").",
-        ["start.done"] = "Caravan {0}: the squad is gone (reached the end or was looted).",
+        ["start.spawned"] = "Carriage {0} appeared and sets out.",
+        ["start.failed"] = "Carriage {0} didn't appear in {1} min. See the server log (lines \"CarriageTracker start\").",
+        ["start.done"] = "Carriage {0}: the squad is gone (reached the end or was looted).",
+        ["start.wakefailed"] = "Carriage {0} didn't start: its route didn't go back to the first stop. Auto-start skips it for an hour.",
         ["start.bad"] = "No route number {0}. List: .cv routes",
 
-        ["status.none"] = "No caravans started by the mod.",
+        ["status.none"] = "No carriages started by the mod.",
         ["status.gone"] = "patrol is gone",
         ["status.item"] = "{0}{1}: {2}, {3} min since start",
         ["status.auto"] = " (auto, {0})",
         ["stop.ok"] = "Stopped: {0}. Route settings restored.",
 
-        ["list.empty"] = "There are no caravans on the map right now.",
-        ["list.head"] = "Caravans on the map: {0}. Marker on one: .cv m <number>",
+        ["list.empty"] = "There are no carriages on the map right now.",
+        ["list.head"] = "Carriages on the map: {0}. Marker on one: .cv m <number>",
         ["list.item"] = "{0}. {1} - {2} m, {3}{4}",
-        ["mark.bad"] = "No caravan number {0}. List: .cv l",
+        ["mark.bad"] = "No carriage number {0}. List: .cv l",
         ["mark.ok"] = "Marker: {0}, {1} m, {2}{3}. Open the map, the path is set.",
         ["routemark.ok"] = "Marker on route {0} at its point from .cv r: {1} m, {2}. Open the map, the path is set.",
 
         ["routes.head"] = "Routes: {0}. Start one (admin): .cv start <number>",
-        ["routes.item"] = "{0}. {1} [{2}] (lvl {3}, {4}{5}): {6}{10}{7}{11}, {8} m, {9}",
+        ["routes.item"] = "{0}. {1} [{2}] ({12}, lvl {3}, {4}{5}): {6}{10}{7}{11}, {8} m, {9}",
         ["routes.manual"] = " manual",
         ["routes.running"] = " [started]",
         ["routes.excluded"] = " [no auto-start]",
         ["stops.of"] = "stop {0} of {1}",
         ["stops.at"] = "stop {0}",
 
-        ["act.none"] = "Your act: I. No V Blood drunk yet.",
-        ["act.mine"] = "Your act: {0}. V Blood drunk: {1}, the highest: {2} (lvl {3}).",
+        ["act.none"] = "Your act: {0}{1}. No V Blood drunk yet.",
+        ["act.mine"] = "Your act: {0}{1}. V Blood drunk: {2}, the highest: {3} (lvl {4}).",
+        ["act.bylevel"] = " (by level {0})",
+        ["act.level"] = " Level: {0}.",
+        ["act.next"] = " The strongest V Blood of {0} is drunk, so {1} is open.",
         ["act.online"] = "Online: {0}",
-        ["act.routes"] = "Routes of {0}: {1}",
-        ["act.noroutes"] = "No routes in {0}, auto-start uses the nearest lower act.",
+        ["act.routes"] = "Carriages for you ({0}): {1}",
+        ["act.empty"] = "{0} has no routes, so you get the carriages of {1}.",
+        ["act.noroutes"] = "There are no routes for {0}.",
 
         ["icon.bad"] = "{0} is not an icon. Use a name ({1}) or a number from .cv icons",
         ["icon.notmap"] = "{0} is not a map icon. List: .cv icons <filter>",
-        ["icon.ok"] = "Caravan icon: {0} ({1}).",
+        ["icon.ok"] = "Carriage icon: {0} ({1}).",
         ["icons.head"] = "Icons: {0}, page {1}/{2}. All of them are written to the server log.",
         ["mode.bad"] = "Mode: direct or proxy.",
         ["lang.ok"] = "Language: English. Only for you; other players keep theirs.",
-        ["welcome"] = "Welcome! Every caravan here is shown on the map, and new ones set out in your act. {0} - caravans by distance, {1} - map marker on the nearest. Language: {2} / {3}",
+        ["welcome"] = "Welcome! Every carriage here is shown on the map, and new ones set out in your act. {0} - carriages by distance, {1} - map marker on the nearest. Language: {2} / {3}",
 
         ["auto.off"] = "Auto-start is off. Turn it on: .cv auto <minutes>",
         ["auto.status"] = "Auto-start: every {0} min per act, {1}, at most {2} per act and {3} in total. On the road now: {4}.",
@@ -162,19 +187,19 @@ static class L
         ["auto.last"] = "Last: {0}",
         ["auto.nothing"] = "Nothing to start now.",
         ["auto.nobody"] = "Nobody is online, skipped.",
-        ["auto.gameonly"] = "Source = Game: only the game starts caravans, auto-start is off. Change: .cv source mod",
-        ["auto.modoff"] = "Auto-start is off, so with Source = Mod no caravans appear at all. Turn it on: .cv auto 20",
+        ["auto.gameonly"] = "Source = Game: only the game starts carriages, auto-start is off. Change: .cv source mod",
+        ["auto.modoff"] = "Auto-start is off, so with Source = Mod no carriages appear at all. Turn it on: .cv auto 20",
         ["routes.adminonly"] = "This command is for admins on this server.",
-        ["cleanup.ok"] = "Cleaned up: starts stopped {0}, routes restored {1}, units given their freezing back {2}, the mod's icons removed. Until the server restarts the mod changes nothing. Now remove CaravanTracker.dll and restart the server.",
+        ["cleanup.ok"] = "Cleaned up: starts stopped {0}, routes restored {1}, units given their freezing back {2}, the mod's icons removed. Until the server restarts the mod changes nothing. Now remove CarriageTracker.dll and restart the server.",
         ["cleanup.paused"] = "The mod is paused after .cv cleanup until the server restarts.",
-        ["source.now"] = "Caravans: {0}.",
+        ["source.now"] = "Carriages: {0}.",
         ["source.mod"] = "only the mod's, the game doesn't spawn them by itself",
         ["source.game"] = "only the game's, auto-start is off",
         ["source.both"] = "the mod's and the game's",
-        ["auto.noroutes"] = "{0}: no routes in this or lower acts.",
+        ["auto.noroutes"] = "{0}: there are no routes for this act.",
         ["auto.maxtotal"] = "Server limit: {0} of {1} on the road.",
         ["auto.maxact"] = "{0}: limit, {1} of {2} on the road.",
-        ["auto.busy"] = "{0}: every route already has a caravan.",
+        ["auto.busy"] = "{0}: every route already has a carriage.",
         ["auto.started"] = "{1}: started {0} (free routes: {2}; {3}).",
     };
 
@@ -185,16 +210,23 @@ static class L
         ["act.name"] = "акт {0}",
         ["act.unknown"] = "акт ?",
 
+        ["side.east"] = ", восток",
+        ["side.west"] = ", запад",
+        ["region.Farbane"] = "Farbane Woods",
+        ["region.Dunley"] = "Dunley Farmlands",
+        ["region.Silverlight"] = "Silverlight Hills",
+        ["region.Oakveil"] = "Oakveil Woodlands",
+
         ["route.BanditAnimal"] = "бандиты: животные",
         ["route.BanditCopper"] = "бандиты: медь",
         ["route.BanditPlank"] = "бандиты: доски",
         ["route.BanditPrisoners"] = "бандиты: пленники",
         ["route.BanditSulfur"] = "бандиты: сера",
-        ["route.BlackfangBastion"] = "Blackfang: бастион",
-        ["route.BlackfangSouth"] = "Blackfang: юг",
+        ["route.BlackfangBastion"] = "Venom Blades: наждак",
+        ["route.BlackfangSouth"] = "Venom Blades: ядовитый сок и дуб",
         ["route.ChuchGrape"] = "церковь: виноград",
         ["route.ChuchSilver"] = "церковь: серебро",
-        ["route.ChurchLegion"] = "церковь: легион",
+        ["route.ChurchLegion"] = "церковь: пленные дракулины",
         ["route.ChurchMutants"] = "церковь: мутанты",
         ["route.MilitiaCotton"] = "ополчение: хлопок",
         ["route.MilitiaIron"] = "ополчение: железо",
@@ -229,7 +261,8 @@ static class L
         ["route.state.endguarded"] = "доехал до конца, застыл с охраной",
         ["route.state.endempty"] = "застрял в конце маршрута, пустой",
         ["route.state.waiting"] = "ждёт появления",
-        ["route.state.nocart"] = "повозка разбита, лошадь идёт к концу",
+        ["route.state.nocart"] = "повозка разбита, животное идёт к концу",
+        ["route.state.loopleft"] = "повозка разбита, остальные кружат по маршруту",
         ["route.state.moving"] = "едет",
         ["route.state.other"] = "{0}/{1}, юнитов {2}",
 
@@ -238,8 +271,9 @@ static class L
         ["start.midway"] = " Маршрут стоит посреди пути: там его оставил прошлый караван, и этот поедет оттуда.",
         ["start.reset"] = " Маршрут стоял посреди пути ({0}), мод вернул его в начало.",
         ["start.spawned"] = "Караван «{0}» появился и выезжает.",
-        ["start.failed"] = "Караван «{0}» не появился за {1} мин. Смотри лог сервера (строки «CaravanTracker start»).",
+        ["start.failed"] = "Караван «{0}» не появился за {1} мин. Смотри лог сервера (строки «CarriageTracker start»).",
         ["start.done"] = "Караван «{0}»: отряд исчез (доехал или разграблен).",
+        ["start.wakefailed"] = "Караван «{0}» не запущен: маршрут не вернулся на первую остановку. Автозапуск пропустит его на час.",
         ["start.bad"] = "Нет маршрута с номером {0}. Список: .cv routes",
 
         ["status.none"] = "Запущенных модом караванов нет.",
@@ -256,18 +290,22 @@ static class L
         ["routemark.ok"] = "Метка на маршруте «{0}», на его точке из .cv r: {1} м, {2}. Открой карту, путь проложен.",
 
         ["routes.head"] = "Маршрутов: {0}. Запуск (админ): .cv start <номер>",
-        ["routes.item"] = "{0}. {1} [{2}] (ур. {3}, {4}{5}): {6}{10}{7}{11}, {8} м, {9}",
+        ["routes.item"] = "{0}. {1} [{2}] ({12}, ур. {3}, {4}{5}): {6}{10}{7}{11}, {8} м, {9}",
         ["routes.manual"] = " вручную",
         ["routes.running"] = " [запущен]",
         ["routes.excluded"] = " [без автозапуска]",
         ["stops.of"] = "остановка {0} из {1}",
         ["stops.at"] = "остановка {0}",
 
-        ["act.none"] = "Твой акт: I. Выпитых V Blood пока нет.",
-        ["act.mine"] = "Твой {0}. Выпито V Blood: {1}, старший: {2} (ур. {3}).",
+        ["act.none"] = "Твой {0}{1}. Выпитых V Blood пока нет.",
+        ["act.mine"] = "Твой {0}{1}. Выпито V Blood: {2}, старший: {3} (ур. {4}).",
+        ["act.bylevel"] = " (по уровню {0})",
+        ["act.level"] = " Уровень: {0}.",
+        ["act.next"] = " Самый сильный V Blood ({0}) выпит, поэтому открыт {1}.",
         ["act.online"] = "Онлайн: {0}",
-        ["act.routes"] = "Маршруты ({0}): {1}",
-        ["act.noroutes"] = "Маршрутов нет ({0}), автозапуск возьмёт ближайший младший акт.",
+        ["act.routes"] = "Караваны для тебя ({0}): {1}",
+        ["act.empty"] = "В {0} маршрутов нет, поэтому тебе идут караваны: {1}.",
+        ["act.noroutes"] = "Маршрутов для {0} нет.",
 
         ["icon.bad"] = "{0} - не иконка. Нужно имя ({1}) или номер из .cv icons",
         ["icon.notmap"] = "{0} - это не иконка карты. Список: .cv icons <фильтр>",
@@ -288,13 +326,13 @@ static class L
         ["auto.gameonly"] = "Source = Game: караваны запускает только игра, автозапуск выключен. Сменить: .cv source mod",
         ["auto.modoff"] = "Автозапуск выключен, а при Source = Mod караванов не будет совсем. Включить: .cv auto 20",
         ["routes.adminonly"] = "На этом сервере эта команда только для админов.",
-        ["cleanup.ok"] = "Очищено: остановлено запусков {0}, маршрутов восстановлено {1}, юнитам возвращена заморозка {2}, иконки мода удалены. До перезапуска сервера мод ничего не меняет. Теперь удали CaravanTracker.dll и перезапусти сервер.",
+        ["cleanup.ok"] = "Очищено: остановлено запусков {0}, маршрутов восстановлено {1}, юнитам возвращена заморозка {2}, иконки мода удалены. До перезапуска сервера мод ничего не меняет. Теперь удали CarriageTracker.dll и перезапусти сервер.",
         ["cleanup.paused"] = "Мод на паузе после .cv cleanup до перезапуска сервера.",
         ["source.now"] = "Караваны: {0}.",
         ["source.mod"] = "только мода, сама игра их не выпускает",
         ["source.game"] = "только игры, автозапуск выключен",
         ["source.both"] = "и мода, и игры",
-        ["auto.noroutes"] = "{0}: нет маршрутов ни в этом, ни в младших актах.",
+        ["auto.noroutes"] = "{0}: для этого акта маршрутов нет.",
         ["auto.maxtotal"] = "Лимит сервера: едут {0} из {1}.",
         ["auto.maxact"] = "{0}: лимит, едут {1} из {2}.",
         ["auto.busy"] = "{0}: на всех маршрутах уже есть караваны.",

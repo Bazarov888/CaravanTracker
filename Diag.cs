@@ -12,7 +12,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using VampireCommandFramework;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Developer tools: dumps of caravan objects and patrols. Registered only with EnableDiagnostics = true.
 [CommandGroup("cvdiag")]
@@ -63,7 +63,7 @@ public class DiagCommands
         }
         names.Sort(StringComparer.Ordinal);
         if (!prefabs._PrefabLookupMap.TryGetName(em.GetComponentData<PrefabGUID>(best), out string prefabName)) prefabName = "?";
-        Plugin.Info($"CaravanTracker comps {prefabName}: {string.Join(", ", names)}");
+        Plugin.Info($"CarriageTracker comps {prefabName}: {string.Join(", ", names)}");
         ctx.Reply($"{prefabName}, {Math.Round(bestDist)} m, components: {names.Count}. Full list in the server log.");
         for (int i = 0; i < names.Count; i += 6)
             ctx.Reply(string.Join(", ", names.GetRange(i, Math.Min(6, names.Count - i))));
@@ -266,14 +266,14 @@ public class DiagCommands
         lines.Add("  all components: " + string.Join(", ", names));
     }
 
-    [Command("dump", adminOnly: true, description: "Everything about caravan carts into BepInEx/CaravanTracker-dump.txt")]
+    [Command("dump", adminOnly: true, description: "Everything about caravan carts into BepInEx/CarriageTracker-dump.txt")]
     public void Dump(ChatCommandContext ctx)
     {
         var world = Caravans.ServerWorld();
         var prefabs = world == null ? null : Caravans.Prefabs(world);
         if (prefabs == null) { ctx.Reply(L.T("world.notready")); return; }
         var em = world.EntityManager;
-        var lines = new List<string> { $"CaravanTracker dump {DateTime.Now:yyyy-MM-dd HH:mm:ss}" };
+        var lines = new List<string> { $"CarriageTracker dump {DateTime.Now:yyyy-MM-dd HH:mm:ss}" };
         var targets = new List<Entity>();
         var seen = new HashSet<(int, int)>();
 
@@ -333,9 +333,9 @@ public class DiagCommands
         }
         count += refCount;
 
-        var path = System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CaravanTracker-dump.txt");
+        var path = System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CarriageTracker-dump.txt");
         System.IO.File.WriteAllLines(path, lines);
-        ctx.Reply($"Objects written: {count} of {targets.Count}, lines: {lines.Count}. File: BepInEx/CaravanTracker-dump.txt");
+        ctx.Reply($"Objects written: {count} of {targets.Count}, lines: {lines.Count}. File: BepInEx/CarriageTracker-dump.txt");
     }
 
     // ---- patrols: all squad spawners and patrols of the world ----
@@ -381,14 +381,14 @@ public class DiagCommands
         }
     }
 
-    [Command("patrols", adminOnly: true, description: "All squad spawners and patrols into BepInEx/CaravanTracker-patrols.txt")]
+    [Command("patrols", adminOnly: true, description: "All squad spawners and patrols into BepInEx/CarriageTracker-patrols.txt")]
     public void Patrols(ChatCommandContext ctx)
     {
         var world = Caravans.ServerWorld();
         var prefabs = world == null ? null : Caravans.Prefabs(world);
         if (prefabs == null) { ctx.Reply(L.T("world.notready")); return; }
         var em = world.EntityManager;
-        var lines = new List<string> { $"CaravanTracker patrols {DateTime.Now:yyyy-MM-dd HH:mm:ss}" };
+        var lines = new List<string> { $"CarriageTracker patrols {DateTime.Now:yyyy-MM-dd HH:mm:ss}" };
 
         var spawnerT = ManagedBySimpleName("UnitCompositionSpawner");
         var patrolT = ManagedBySimpleName("GlobalPatrolState");
@@ -401,7 +401,7 @@ public class DiagCommands
         foreach (var (label, t) in new[] { ("spawner", spawnerT), ("patrol", patrolT), ("move", moveT), ("debugName", nameT),
                                            ("group", groupT), ("unit", unitT), ("active", activeT), ("busStop", busT) })
             lines.Add($"type {label}: {(t == null ? "not found" : t.FullName)}");
-        if (spawnerT == null) { System.IO.File.WriteAllLines(System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CaravanTracker-patrols.txt"), lines); ctx.Reply("Type UnitCompositionSpawner not found."); return; }
+        if (spawnerT == null) { System.IO.File.WriteAllLines(System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CarriageTracker-patrols.txt"), lines); ctx.Reply("Type UnitCompositionSpawner not found."); return; }
 
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.From(spawnerT)))
@@ -459,7 +459,7 @@ public class DiagCommands
         lines.Add("");
         lines.Add("==== other spawners ====");
         lines.AddRange(otherLines);
-        System.IO.File.WriteAllLines(System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CaravanTracker-patrols.txt"), lines);
-        ctx.Reply($"Spawners: {total}, patrols: {patrols}, with carts: {carriagePatrols}. File: BepInEx/CaravanTracker-patrols.txt");
+        System.IO.File.WriteAllLines(System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "CarriageTracker-patrols.txt"), lines);
+        ctx.Reply($"Spawners: {total}, patrols: {patrols}, with carts: {carriagePatrols}. File: BepInEx/CarriageTracker-patrols.txt");
     }
 }

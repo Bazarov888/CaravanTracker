@@ -8,16 +8,19 @@ using Stunlock.Core;
 using Unity.Collections;
 using Unity.Entities;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
-// Acts as in the game's V Blood menu (K). A player's act is the highest act among the V Blood they have drunk.
-// A route's act comes from the level of the caravan guards, with the same bounds as the bosses in the menu:
-// up to 39 - I, 40-59 - II, 60-65 - III, 66 and above - IV.
+// Acts as in the game's V Blood menu (K). A player's act (PlayerAct setting, ActLogic): by V Blood, the act of the
+// highest V Blood drunk, and the next act once the final V Blood of an act is drunk; or by the character's level;
+// or the higher of both. A route's acts come from the level of the caravan guards, with the same bounds as the
+// bosses in the menu (up to 39 - I, 40-59 - II, 60-65 - III, 66 and above - IV), or from RouteActs.
 static class Acts
 {
     public record Boss(int Act, string Name, int Level);
-    public record PlayerAct(int Act, string Boss, int BossLevel, int Drunk);
-    public record RouteAct(int Level, int Act, bool Manual);
+    // Act: the one used. ByVBlood: by V Blood alone. Opened: the act whose final V Blood is drunk, 0 if none.
+    // Level: the character's level the game shows (Bloodcraft's level with its leveling), 0 if unknown.
+    public record PlayerAct(int Act, string Boss, int BossLevel, int Drunk, int ByVBlood, int Opened, int Level, bool ByLevel);
+    public record RouteAct(int Level, SortedSet<int> Acts, bool Manual);
 
     // The list from the wiki (V Blood Carriers page), prefab names as in the game.
     static readonly Dictionary<string, Boss> Bosses = new(StringComparer.OrdinalIgnoreCase)
@@ -90,6 +93,22 @@ static class Acts
         ["CHAR_Vampire_Dracula_VBlood"] = new(4, "Dracula the Immortal King", 91),
     };
 
+    // The final V Blood of each act: the strongest one of that act in the list (Quincey, Octavian, Cyril, Dracula).
+    static readonly Dictionary<int, string> Finals = FindFinals();
+
+    static Dictionary<int, string> FindFinals()
+    {
+        var best = new Dictionary<int, Boss>();
+        var result = new Dictionary<int, string>();
+        foreach (var kv in Bosses)
+            if (!best.TryGetValue(kv.Value.Act, out var b) || kv.Value.Level > b.Level)
+            {
+                best[kv.Value.Act] = kv.Value;
+                result[kv.Value.Act] = kv.Key;
+            }
+        return result;
+    }
+
     public static string Roman(int act) => act switch { 1 => "I", 2 => "II", 3 => "III", 4 => "IV", _ => "?" };
 
     public static int OfLevel(int level) => ActLogic.OfLevel(level);
@@ -102,38 +121,59 @@ static class Acts
         return em.GetComponentData<UnitLevel>(prefab).Level._Value;
     }
 
-    // A player's act by the V Blood they drank. A V Blood missing from the list counts by its level.
+    // The character's level as the game shows it (Equipment). With Bloodcraft's leveling it is the Bloodcraft
+    // level (Bloodcraft writes it there), without it the gear level. 0 if there is no character.
+    public static int LevelOfUser(EntityManager em, Entity userEntity)
+    {
+        if (!em.Exists(userEntity) || !Caravans.Has<User>(em, userEntity)) return 0;
+        var character = em.GetComponentData<User>(userEntity).LocalCharacter.GetEntityOnServer();
+        if (character == Entity.Null || !em.Exists(character) || !Caravans.Has<Equipment>(em, character)) return 0;
+        return (int)Math.Floor(em.GetComponentData<Equipment>(character).GetFullLevel());
+    }
+
+    // A player's act (PlayerAct setting). A V Blood missing from the list counts by its level.
     public static PlayerAct OfUser(EntityManager em, PrefabCollectionSystem prefabs, Entity userEntity)
     {
-        int act = 1, bossLevel = -1, drunk = 0;
+        int bossAct = 1, bossLevel = -1, drunk = 0, opened = 0;
         string boss = null;
-        if (!em.Exists(userEntity) || !Caravans.Has<ProgressionMapper>(em, userEntity)) return new(1, null, 0, 0);
-        var progression = em.GetComponentData<ProgressionMapper>(userEntity).ProgressionEntity.GetEntityOnServer();
-        if (progression == Entity.Null || !em.Exists(progression) || !em.HasBuffer<UnlockedVBlood>(progression))
-            return new(1, null, 0, 0);
-        var buf = em.GetBuffer<UnlockedVBlood>(progression);
-        for (int i = 0; i < buf.Length; i++)
+        var drunkActs = new List<(int, bool)>();
+        Entity progression = Entity.Null;
+        if (em.Exists(userEntity) && Caravans.Has<ProgressionMapper>(em, userEntity))
+            progression = em.GetComponentData<ProgressionMapper>(userEntity).ProgressionEntity.GetEntityOnServer();
+        if (progression != Entity.Null && em.Exists(progression) && em.HasBuffer<UnlockedVBlood>(progression))
         {
-            PrefabGUID guid = buf[i].VBlood;
-            drunk++;
-            int a, level;
-            string title;
-            if (prefabs._PrefabLookupMap.TryGetName(guid, out string name) && name != null && Bosses.TryGetValue(name, out var known))
+            var buf = em.GetBuffer<UnlockedVBlood>(progression);
+            for (int i = 0; i < buf.Length; i++)
             {
-                a = known.Act; level = known.Level; title = known.Name;
-            }
-            else
-            {
-                level = LevelOf(em, prefabs, guid);
-                a = OfLevel(level);
-                title = name ?? guid.GuidHash.ToString();
-            }
-            if (a > act || (a == act && level > bossLevel))
-            {
-                act = a; bossLevel = level; boss = title;
+                PrefabGUID guid = buf[i].VBlood;
+                drunk++;
+                int a, level;
+                string title;
+                bool final = false;
+                if (prefabs._PrefabLookupMap.TryGetName(guid, out string name) && name != null && Bosses.TryGetValue(name, out var known))
+                {
+                    a = known.Act; level = known.Level; title = known.Name;
+                    final = Finals.TryGetValue(a, out var f) && f.Equals(name, StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    level = LevelOf(em, prefabs, guid);
+                    a = OfLevel(level);
+                    title = name ?? guid.GuidHash.ToString();
+                }
+                if (a <= 0) continue;
+                drunkActs.Add((a, final));
+                if (final && a < 4) opened = Math.Max(opened, a);
+                if (a > bossAct || (a == bossAct && level > bossLevel))
+                {
+                    bossAct = a; bossLevel = level; boss = title;
+                }
             }
         }
-        return new(act, boss, bossLevel, drunk);
+        int byVBlood = ActLogic.ByVBlood(drunkActs);
+        int charLevel = LevelOfUser(em, userEntity);
+        int act = ActLogic.Of(Settings.PlayerActMode, byVBlood, charLevel);
+        return new(act, boss, Math.Max(0, bossLevel), drunk, byVBlood, opened, charLevel, act != byVBlood);
     }
 
     public record OnlinePlayer(string Name, PlayerAct Act);
@@ -174,36 +214,32 @@ static class Acts
         return best;
     }
 
-    // Manual acts of routes from the RouteActs setting: "MilitiaIron=2,ChuchSilver=4".
+    // Manual acts of routes and regions from the RouteActs setting: "MilitiaIron=2,Silverlight=3+4".
     // Parsed again only when the text of the setting changes.
     static string _manualRaw;
-    static Dictionary<string, int> _manual = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, SortedSet<int>> _manual = new(StringComparer.OrdinalIgnoreCase);
 
-    static Dictionary<string, int> Manual()
+    static Dictionary<string, SortedSet<int>> Manual()
     {
         string raw = Settings.RouteActs.Value ?? "";
         if (raw == _manualRaw) return _manual;
-        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var kv = part.Split('=', 2);
-            if (kv.Length == 2 && int.TryParse(kv[1].Trim(), out int a) && a >= 1 && a <= 4) result[kv[0].Trim()] = a;
-        }
-        _manual = result;
+        _manual = ActLogic.ParseRouteActs(raw);
         _manualRaw = raw;
-        return result;
+        return _manual;
     }
 
-    // Acts that have at least one route.
+    // Acts that have at least one route auto-start may use (ExcludedRoutes left out).
     public static HashSet<int> WithRoutes(EntityManager em, PrefabCollectionSystem prefabs)
     {
         var acts = new HashSet<int>();
-        foreach (var r in Routes.All(em, prefabs)) acts.Add(OfRoute(em, prefabs, r).Act);
+        foreach (var r in Routes.All(em, prefabs))
+            if (!Settings.Excluded(r.Key)) acts.UnionWith(OfRoute(em, prefabs, r).Acts);
         return acts;
     }
 
-    // The act whose caravans a player gets: their own act, or the nearest lower act with routes. 0 if none.
-    public static int Served(int playerAct, HashSet<int> actsWithRoutes) => ActLogic.Served(playerAct, actsWithRoutes);
+    // Route acts whose caravans a player of this act gets (EmptyAct setting, ActLogic.Served).
+    public static List<int> Served(int playerAct, HashSet<int> actsWithRoutes) =>
+        ActLogic.Served(playerAct, actsWithRoutes, Settings.EmptyActMode);
 
     static readonly Dictionary<string, int> LevelCache = new();
 
@@ -227,15 +263,16 @@ static class Acts
             }
             LevelCache[route.Key] = level;
         }
-        if (Manual().TryGetValue(route.Key, out int manual)) return new(level, manual, true);
-        return new(level, OfLevel(level), false);
+        var acts = ActLogic.RouteActs(route.Key, level, Manual(), out bool manual);
+        return new(level, acts, manual);
     }
 
-    // Act of a route by its key (as found caravans are labeled). 0 if unknown.
-    public static int OfRouteKey(EntityManager em, PrefabCollectionSystem prefabs, string key)
+    // Acts of a route by its key (as found caravans are labeled). Empty if unknown.
+    public static SortedSet<int> OfRouteKey(EntityManager em, PrefabCollectionSystem prefabs, string key)
     {
+        var acts = new SortedSet<int>();
         foreach (var r in Routes.All(em, prefabs))
-            if (r.Key == key) return OfRoute(em, prefabs, r).Act;
-        return 0;
+            if (r.Key == key) acts.UnionWith(OfRoute(em, prefabs, r).Acts);
+        return acts;
     }
 }

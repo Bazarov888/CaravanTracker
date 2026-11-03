@@ -1,53 +1,26 @@
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using VampireCommandFramework;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
-// Each player's own chat language (.cv lang), kept in BepInEx/config/Bazarov.CaravanTracker.languages.txt
-// as "steamid=en" lines. Players without one get General.Language from the config.
+// Each player's own chat language (.cv lang), kept in BepInEx/config/CarriageTracker.languages.txt as
+// "steamid=en" lines (how the file is read and written: LanguageStore). Players without one get
+// General.Language from the config.
 static class Languages
 {
-    static Dictionary<ulong, string> _byPlayer;
-    static string FilePath => Path.Combine(BepInEx.Paths.ConfigPath, "Bazarov.CaravanTracker.languages.txt");
+    static LanguageStore _store;
 
-    public static string Of(ulong platformId)
+    static LanguageStore Store => _store ??= new LanguageStore(
+        Path.Combine(BepInEx.Paths.ConfigPath, "CarriageTracker.languages.txt"), L.Known,
+        Path.Combine(BepInEx.Paths.ConfigPath, "Bazarov.CaravanTracker.languages.txt"))
     {
-        Load();
-        return _byPlayer.TryGetValue(platformId, out var lang) ? lang : null;
-    }
+        Warn = m => Plugin.Warn($"CarriageTracker: {m}"),
+    };
 
-    public static void Set(ulong platformId, string lang)
-    {
-        Load();
-        _byPlayer[platformId] = lang;
-        try
-        {
-            var lines = new List<string>();
-            foreach (var kv in _byPlayer) lines.Add($"{kv.Key}={kv.Value}");
-            File.WriteAllLines(FilePath, lines);
-        }
-        catch (Exception e) { Plugin.Warn($"CaravanTracker: can't save player languages: {e.Message}"); }
-    }
+    public static string Of(ulong platformId) => Store.Of(platformId);
 
-    static void Load()
-    {
-        if (_byPlayer != null) return;
-        _byPlayer = new();
-        try
-        {
-            if (!File.Exists(FilePath)) return;
-            foreach (var line in File.ReadAllLines(FilePath))
-            {
-                var parts = line.Split('=', 2);
-                if (parts.Length == 2 && ulong.TryParse(parts[0].Trim(), out var id) && L.Known(parts[1].Trim()))
-                    _byPlayer[id] = parts[1].Trim();
-            }
-        }
-        catch (Exception e) { Plugin.Warn($"CaravanTracker: can't read player languages: {e.Message}"); }
-    }
+    public static void Set(ulong platformId, string lang) => Store.Set(platformId, lang);
 }
 
 // Every command of this mod answers in the language of the player who typed it.
