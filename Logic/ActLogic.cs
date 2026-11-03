@@ -18,8 +18,9 @@ public static class ActLogic
     public static int OfLevel(int level) => level <= 0 ? 0 : level < 40 ? 1 : level < 60 ? 2 : level < 66 ? 3 : 4;
 
     // A player's act by V Blood: the act of the highest V Blood drunk, and the next act as soon as the final
-    // V Blood of an act is drunk (the strongest one of that act in the game's menu). Before 1.0.11 the next act
-    // began only with its own first V Blood, so a player who had beaten act II still got act II caravans.
+    // V Blood of an act is drunk: the strongest one of that act in the list (Quincey, Octavian, Cyril). The game
+    // itself moves acts on by its journal; the beaten final boss is what players go by. Before 1.0.11 the next
+    // act began only with its own first V Blood, so a player who had beaten act II still got act II caravans.
     public static int ByVBlood(IEnumerable<(int Act, bool Final)> drunk)
     {
         int act = 1;

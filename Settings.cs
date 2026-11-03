@@ -138,7 +138,7 @@ static class Settings
             "A route's own entry wins over its region's. By default a route's act comes from its guards' level, " +
             "the same bounds as V Blood in the game's menu: up to 39 - I, 40-59 - II, 60-65 - III, 66+ - IV.");
         PlayerAct = cfg.Bind("AutoStart", "PlayerAct", "VBlood",
-            new ConfigDescription("How a player's act is found. VBlood = the act of the highest V Blood drunk; the final V Blood of an act " +
+            new ConfigDescription("How a player's act is found. VBlood = the act of the highest V Blood drunk; the strongest V Blood of an act " +
                                   "(Quincey, Octavian, Cyril) opens the next act at once. Level = by the character's level, same bounds as above " +
                                   "(with Bloodcraft leveling it is the Bloodcraft level, without it the gear level). Highest = the higher of the two.",
                 new AcceptableValueList<string>("VBlood", "Level", "Highest")));
