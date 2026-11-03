@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Who gets the welcome lines: a player who is in the world now and wasn't at the previous check. A player
 // who leaves is forgotten, so they are greeted again next time. Nobody is greeted at the first check after

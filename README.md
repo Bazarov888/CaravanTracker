@@ -1,6 +1,6 @@
-# CaravanTracker
+# CarriageTracker
 
-[![build](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml/badge.svg)](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml)
+[![build](https://github.com/Bazarov888/CarriageTracker/actions/workflows/build.yml/badge.svg)](https://github.com/Bazarov888/CarriageTracker/actions/workflows/build.yml)
 
 Server-side mod for V Rising. Caravans become visible on the map for everyone, players get a chat announcement when a caravan sets out, and the mod can start caravans on its own in the acts where players are online.
 
@@ -56,7 +56,7 @@ For admins:
 
 ## Configuration
 
-`BepInEx/config/Bazarov.CaravanTracker.cfg` is created on the first start.
+`BepInEx/config/CarriageTracker.cfg` is created on the first start.
 
 | Section | Setting | Default | Meaning |
 |---|---|---|---|
@@ -94,7 +94,7 @@ For admins:
 
 Limits count only caravans started by the mod that still have their cart. Caravans that spawn the vanilla way next to players are not counted.
 
-Each player's language picked with `.cv lang` is kept in `BepInEx/config/Bazarov.CaravanTracker.languages.txt`.
+Each player's language picked with `.cv lang` is kept in `BepInEx/config/CarriageTracker.languages.txt`.
 
 ## Limitations
 
@@ -105,16 +105,16 @@ Each player's language picked with `.cv lang` is kept in `BepInEx/config/Bazarov
 
 ## Installation
 
-Not on Thunderstore yet. Until then take `CaravanTracker.dll` from the zip of the latest [CI run](https://github.com/Bazarov888/CaravanTracker/actions/workflows/build.yml) (artifact `CaravanTracker`) or build it yourself (see Building). Once it is published, r2modman or Thunderstore Mod Manager will install it with its dependencies.
+Not on Thunderstore yet. Until then take `CarriageTracker.dll` from the zip of the latest [CI run](https://github.com/Bazarov888/CarriageTracker/actions/workflows/build.yml) (artifact `CarriageTracker`) or build it yourself (see Building). Once it is published, r2modman or Thunderstore Mod Manager will install it with its dependencies.
 
-Manually: put `CaravanTracker.dll` into `BepInEx/plugins/` on the server. Needs [BepInExPack V Rising](https://thunderstore.io/c/v-rising/p/BepInEx/BepInExPack_V_Rising/) and [VampireCommandFramework](https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/).
+Manually: put `CarriageTracker.dll` into `BepInEx/plugins/` on the server. Needs [BepInExPack V Rising](https://thunderstore.io/c/v-rising/p/BepInEx/BepInExPack_V_Rising/) and [VampireCommandFramework](https://thunderstore.io/c/v-rising/p/deca/VampireCommandFramework/).
 
 ## Uninstalling
 
 The mod changes some route settings in the world while it runs: with `Source = Mod` it blocks the game's own spawning, a started caravan gets start settings for a while, and the icons it creates live in the world. The server save can keep these. Before removing the mod:
 
 1. Run `.cv cleanup` in chat as admin. It stops started caravans, gives every route the game's own spawn range, timers and freezing back, and removes the mod's icons and markers. Until the next server restart the mod then changes nothing.
-2. Stop the server, delete `BepInEx/plugins/CaravanTracker`, start the server.
+2. Stop the server, delete `BepInEx/plugins/CarriageTracker`, start the server.
 
 Without the cleanup, routes blocked by `Source = Mod` would stay without caravans from the game.
 
@@ -128,7 +128,7 @@ Reference assemblies come from NuGet (nuget.org and nuget.bepinex.dev). To build
 
 Tests of the decision logic need only the .NET 8 SDK, no game files: `dotnet run --project tests`.
 
-A Release build also produces the Thunderstore package `dist/CaravanTracker-<version>.zip`. The version is written only in `CaravanTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
+A Release build also produces the Thunderstore package `dist/CarriageTracker-<version>.zip`. The version is written only in `CarriageTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
 
 How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -159,4 +159,4 @@ License: MIT.
 
 Команды и настройки описаны выше, в английской части.
 
-Перед удалением мода выполни в чате `.cv cleanup` (админ): мод вернёт маршрутам настройки игры и уберёт свои иконки. Потом останови сервер, удали папку `BepInEx/plugins/CaravanTracker` и запусти сервер. Без этого маршруты, заблокированные при `Source = Mod`, останутся без караванов игры.
+Перед удалением мода выполни в чате `.cv cleanup` (админ): мод вернёт маршрутам настройки игры и уберёт свои иконки. Потом останови сервер, удали папку `BepInEx/plugins/CarriageTracker` и запусти сервер. Без этого маршруты, заблокированные при `Source = Mod`, останутся без караванов игры.

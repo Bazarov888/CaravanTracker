@@ -1,4 +1,4 @@
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 public enum GoneReason
 {

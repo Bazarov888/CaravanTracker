@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using CaravanTracker;
+using CarriageTracker;
 
 // Each test is a case seen on the live server or a rule from ARCHITECTURE.md.
 // Exit code 1 if any test fails, so CI fails.
@@ -23,8 +23,8 @@ static class Program
     static void True(bool v, string what) { if (!v) throw new Exception(what); }
 
     static RouteSnap Route(string key = "R", string move = "Moving", string spawner = "Spawned", Progress stops = null,
-                           int units = 0, int onMap = -1, int carts = 0, bool running = false, bool failed = false) =>
-        new(key, move, spawner, stops, units, onMap < 0 ? units : onMap, carts, running, failed);
+                           int units = 0, int onMap = -1, int carts = 0, bool running = false, bool failed = false, string id = null) =>
+        new(key, move, spawner, stops, units, onMap < 0 ? units : onMap, carts, running, failed, id);
 
     static Progress Stop(int number, int count) => new(number - 1, 0, count);
 
@@ -117,6 +117,35 @@ static class Program
             Eq("B", free[RouteLogic.Choose(free, true, true, k => last.TryGetValue(k, out var t) ? t : DateTime.MinValue, new Random(1))].Key);
         });
         Test("nothing free", () => Eq(-1, RouteLogic.Choose(new List<RouteSnap>(), true, false, _ => DateTime.MinValue, new Random(1))));
+        Test("audit 02.11: two patrols with the same key keep their own start history", () =>
+        {
+            // The two MilitiaCotton patrols: rotate must take the one that hasn't run, random must skip the one that ran.
+            var free = new List<RouteSnap> { Route("MilitiaCotton", stops: Stop(1, 4), id: "71689:2"),
+                                             Route("MilitiaCotton", stops: Stop(1, 7), id: "71665:2") };
+            var last = new Dictionary<string, DateTime> { ["71689:2"] = T0 };
+            Func<string, DateTime> ls = k => last.TryGetValue(k, out var t) ? t : DateTime.MinValue;
+            Eq("71665:2", free[RouteLogic.Choose(free, true, true, ls, new Random(1))].Id, "rotate");
+            for (int i = 0; i < 20; i++) Eq("71665:2", free[RouteLogic.Choose(free, true, false, ls, new Random(i))].Id, "random");
+            last["71665:2"] = T0.AddMinutes(20);
+            Eq("71689:2", free[RouteLogic.Choose(free, true, true, ls, new Random(1))].Id, "rotate back");
+        });
+        Test("loop routes (Oakveil): no mid-way, no reset, robbed leftovers free the route", () =>
+        {
+            var loop = new Progress(2, 6, 8, true);
+            True(!loop.AtLast && loop.Left == 0, "no end");
+            Eq("3/8 loop", loop.Log);
+            Eq(PickGroup.AtStart, RouteLogic.Group(Route(stops: loop)), "counts as at its start");
+            True(!RouteLogic.NeedsReset(loop, "Moving"), "no reset");
+            var robbed = RouteLogic.Classify(Route(units: 4, carts: 0, stops: loop));
+            Eq(RouteState.LoopLeftover, robbed); True(RouteLogic.IsFree(robbed), "free");
+            Eq(RouteState.OnRoad, RouteLogic.Classify(Route(units: 5, carts: 1, stops: loop)));
+            var s = new RunState { Started = T0 };
+            RunLogic.Squad(s, T0, false, Us(1, 2), 20);
+            var five = TimeSpan.FromMinutes(5); var ninety = TimeSpan.FromMinutes(90);
+            Eq(RunEnd.None, RunLogic.Outcome(s, T0.AddMinutes(1), 2, 1, false, five, ninety, out _, true));
+            Eq(RunEnd.LoopCartLost, RunLogic.Outcome(s, T0.AddMinutes(2), 1, 0, false, five, ninety, out var lost, true));
+            True(lost, "cart lost reported");
+        });
         Test("reset only mid-way routes", () =>
         {
             True(RouteLogic.NeedsReset(Stop(6, 8), "StoppedDueToUnit"), "mid-way");
@@ -205,6 +234,7 @@ static class Program
             True(!c.Assembled, "assembly window restarts when the squad grows");
             True(!RunLogic.Squad(s, T0.AddSeconds(150), false, Us(1, 2, 3, 4, 5, 6, 7, 8), Max).Assembled, "89 s quiet");
             True(RunLogic.Squad(s, T0.AddSeconds(156), false, Us(1, 2, 3, 4, 5, 6, 7, 8), Max).Assembled, "90 s quiet");
+            s.Restored = true;   // the executor wrote the route's settings
             True(!RunLogic.Squad(s, T0.AddSeconds(157), false, Us(1, 2, 3, 4, 5, 6, 7, 8), Max).Assembled, "only once");
         });
         Test("assembly ends 4 minutes after the first unit even if the squad keeps growing", () =>
@@ -223,6 +253,37 @@ static class Program
             var k = RunLogic.Squad(s, T0.AddSeconds(10), false, Us(1, 2, 9), Max);   // 3 killed, 9 sent by the game
             Eq(1, k.Replacements.Count, "replacements"); Eq(U(9), k.Replacements[0]); Eq(2, k.Remaining.Count, "remaining");
             True(s.LostAny, "lost");
+        });
+        Test("audit 02.11: a guard still on its way after an early kill is a member, not a replacement", () =>
+        {
+            var s = new RunState { Started = T0 };
+            RunLogic.Squad(s, T0, false, Us(1, 2, 3), Max, 8);                    // animal, cart guard, one guard
+            var k = RunLogic.Squad(s, T0.AddSeconds(10), false, Us(1, 2, 4), Max, 8); // 3 killed, 4 is the next original guard
+            Eq(0, k.Replacements.Count, "late guard kept"); Eq(3, k.Remaining.Count);
+            RunLogic.Squad(s, T0.AddSeconds(20), false, Us(1, 2, 4, 5, 6, 7, 8), Max, 8);
+            Eq(8, s.Known.Count, "squad complete, the killed one counted");
+            var r = RunLogic.Squad(s, T0.AddSeconds(30), false, Us(1, 2, 4, 5, 6, 7, 8, 9), Max, 8);
+            Eq(1, r.Replacements.Count, "beyond its size it is a replacement"); Eq(U(9), r.Replacements[0]);
+        });
+        Test("audit 02.11: the route's settings are asked for until the executor confirms them", () =>
+        {
+            var s = new RunState { Started = T0 };
+            RunLogic.Squad(s, T0, false, Us(1), Max);
+            True(RunLogic.Squad(s, T0.AddSeconds(90), false, Us(1), Max).Assembled, "assembled");
+            True(!s.Restored, "not marked before the write");
+            True(RunLogic.Squad(s, T0.AddSeconds(91), false, Us(1), Max).Assembled, "the write failed: asked again");
+        });
+        Test("02.11: a spawn buff is a leftover 10 s after the unit appeared", () =>
+        {
+            var s = new RunState { Started = T0 };
+            True(!RunLogic.PastSpawn(s, null, T0.AddSeconds(30)), "nothing spawned");
+            RunLogic.Squad(s, T0, false, Us(1), Max);
+            RunLogic.Squad(s, T0.AddSeconds(8), false, Us(1, 2), Max);
+            True(!RunLogic.PastSpawn(s, U(1), T0.AddSeconds(9)), "animal 9 s");
+            True(RunLogic.PastSpawn(s, U(1), T0.AddSeconds(10)), "animal 10 s");
+            True(!RunLogic.PastSpawn(s, U(2), T0.AddSeconds(10)), "guard 2 s");
+            True(RunLogic.PastSpawn(s, null, T0.AddSeconds(10)), "cart: since the first unit");
+            True(!RunLogic.PastSpawn(s, U(5), T0.AddSeconds(60)), "not a member");
         });
         Test("squad over MaxSquadSize is cut", () =>
         {
@@ -276,22 +337,22 @@ static class Program
         Test("waking: spawn only after the game returned the route to its first stop", () =>
         {
             var s = new RunState { Started = T0, Phase = RunPhase.Waking };
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), true, false, 0, false, out _), "still at the end");
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 0, true, out _), "index reset, patrol not moved yet");
-            True(RunLogic.ReadyToArm(s, T0.AddSeconds(21), true, false, 0, false, out var t2) && t2, "gives up after 20 s");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s, T0.AddSeconds(1), true, false, 0, false), "still at the end");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 0, true), "index reset, patrol not moved yet");
+            Eq(WakeStep.GiveUp, RunLogic.ReadyToArm(s, T0.AddSeconds(21), true, false, 0, false), "gives up after 20 s, no spawn at the end");
         });
         Test("log 01.11: no spawn one second after the reset; the spawner must be idle and it must hold 3 s", () =>
         {
             var s = new RunState { Started = T0, Phase = RunPhase.Waking };
             // 1.0.8 armed here (back at the first stop 1 s after waking): the animal was immortal.
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(1), false, true, 266, false, out _), "old squad still being removed");
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 266, true, out _), "idle just now");
-            True(!RunLogic.ReadyToArm(s, T0.AddSeconds(4), false, true, 266, true, out _), "2 s idle");
-            True(RunLogic.ReadyToArm(s, T0.AddSeconds(5), false, true, 266, true, out var t) && !t, "3 s idle");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s, T0.AddSeconds(1), false, true, 266, false), "old squad still being removed");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s, T0.AddSeconds(2), false, true, 266, true), "idle just now");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s, T0.AddSeconds(4), false, true, 266, true), "2 s idle");
+            Eq(WakeStep.Arm, RunLogic.ReadyToArm(s, T0.AddSeconds(5), false, true, 266, true), "3 s idle");
             var s2 = new RunState { Started = T0, Phase = RunPhase.Waking };
-            RunLogic.ReadyToArm(s2, T0.AddSeconds(2), false, true, 50, true, out _);
-            True(!RunLogic.ReadyToArm(s2, T0.AddSeconds(4), false, true, 50, false, out _), "not idle again: wait anew");
-            True(!RunLogic.ReadyToArm(s2, T0.AddSeconds(6), false, true, 50, true, out _), "idle again for 0 s");
+            RunLogic.ReadyToArm(s2, T0.AddSeconds(2), false, true, 50, true);
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s2, T0.AddSeconds(4), false, true, 50, false), "not idle again: wait anew");
+            Eq(WakeStep.Wait, RunLogic.ReadyToArm(s2, T0.AddSeconds(6), false, true, 50, true), "idle again for 0 s");
         });
 
         // --- Acts and caravan rules
@@ -300,10 +361,56 @@ static class Program
             Eq(0, ActLogic.OfLevel(0)); Eq(1, ActLogic.OfLevel(39)); Eq(2, ActLogic.OfLevel(40)); Eq(2, ActLogic.OfLevel(59));
             Eq(3, ActLogic.OfLevel(60)); Eq(3, ActLogic.OfLevel(65)); Eq(4, ActLogic.OfLevel(66));
         });
-        Test("player act falls back to the nearest lower act with routes", () =>
+        Test("EmptyAct = Lower: the nearest lower act with routes, else the nearest higher", () =>
         {
             var acts = new HashSet<int> { 1, 2 };
-            Eq(2, ActLogic.Served(4, acts)); Eq(1, ActLogic.Served(1, acts)); Eq(0, ActLogic.Served(1, new HashSet<int> { 3 }));
+            Eq("2", string.Join("+", ActLogic.Served(4, acts, EmptyActUse.Lower)));
+            Eq("1", string.Join("+", ActLogic.Served(1, acts, EmptyActUse.Lower)));
+            Eq("3", string.Join("+", ActLogic.Served(1, new HashSet<int> { 3 }, EmptyActUse.Lower)));
+            Eq(0, ActLogic.Served(1, new HashSet<int>(), EmptyActUse.Lower).Count);
+        });
+        Test("03.11: a player in act III (no carriages in the game) gets act IV routes by default", () =>
+        {
+            var acts = new HashSet<int> { 1, 2, 4 };
+            Eq("4", string.Join("+", ActLogic.Served(3, acts, EmptyActUse.Higher)), "Higher");
+            Eq("2+4", string.Join("+", ActLogic.Served(3, acts, EmptyActUse.Both)), "Both");
+            Eq("2", string.Join("+", ActLogic.Served(3, acts, EmptyActUse.Lower)), "Lower");
+            Eq("2", string.Join("+", ActLogic.Served(3, new HashSet<int> { 1, 2 }, EmptyActUse.Higher)), "nothing higher");
+            Eq("2", string.Join("+", ActLogic.Served(2, acts, EmptyActUse.Higher)), "own act has routes");
+        });
+        Test("03.11: the final V Blood of an act opens the next act", () =>
+        {
+            Eq(1, ActLogic.ByVBlood(new (int, bool)[0]), "nothing drunk");
+            Eq(2, ActLogic.ByVBlood(new[] { (1, false), (2, false) }));
+            Eq(3, ActLogic.ByVBlood(new[] { (1, true), (2, false), (2, true) }), "Octavian drunk, no act III V Blood yet");
+            Eq(4, ActLogic.ByVBlood(new[] { (4, true) }), "not above IV");
+        });
+        Test("player act by level (Bloodcraft) or the higher of both", () =>
+        {
+            Eq(2, ActLogic.Of(PlayerActBy.VBlood, 2, 70));
+            Eq(4, ActLogic.Of(PlayerActBy.Level, 2, 70));
+            Eq(1, ActLogic.Of(PlayerActBy.Level, 3, 0), "level unknown");
+            Eq(3, ActLogic.Of(PlayerActBy.Highest, 3, 45));
+            Eq(4, ActLogic.Of(PlayerActBy.Highest, 3, 66));
+        });
+        Test("regions of routes (wiki, Carriage page)", () =>
+        {
+            Eq("Farbane", ActLogic.Region("BanditCopper")); Eq("Dunley", ActLogic.Region("MilitiaCotton"));
+            Eq("Dunley", ActLogic.Region("ChurchLegion")); Eq("Silverlight", ActLogic.Region("ChuchSilver"));
+            Eq("Silverlight", ActLogic.Region("ChurchMutants")); Eq("Oakveil", ActLogic.Region("BlackfangSouth"));
+            Eq(null, ActLogic.Region("SomethingNew"));
+        });
+        Test("RouteActs: route keys, regions, several acts", () =>
+        {
+            var m = ActLogic.ParseRouteActs(" MilitiaIron=2, silverlight=3+4, Oakveil=4, bad=7, x, ChuchGrape=1+9 ");
+            Eq(3, m.Count, "parsed");
+            Eq("2", string.Join("+", ActLogic.RouteActs("MilitiaIron", 50, m, out bool man1))); True(man1, "manual");
+            Eq("3+4", string.Join("+", ActLogic.RouteActs("ChuchSilver", 70, m, out _)), "by region");
+            Eq("3+4", string.Join("+", ActLogic.RouteActs("ChuchGrape", 70, m, out _)), "a wrong value is skipped, region applies");
+            Eq("2", string.Join("+", ActLogic.RouteActs("MilitiaQuartz", 50, m, out bool man2))); True(!man2, "by level");
+            var key = ActLogic.ParseRouteActs("ChurchLegion=2,Dunley=3");
+            Eq("2", string.Join("+", ActLogic.RouteActs("ChurchLegion", 70, key, out _)), "the route key wins over its region");
+            Eq(0, ActLogic.RouteActs("X", 0, m, out _).Count, "unknown level");
         });
         Test("log 30.10: a cart left without its animal gets no icon", () =>
         {
@@ -329,6 +436,42 @@ static class Program
             True(!CaravanRules.Announce(true, false, true, true, false, "Moving"), "frozen");
             True(!CaravanRules.Announce(true, false, true, false, true, "Moving"), "orphan");
             True(!CaravanRules.Announce(true, false, true, false, false, "WaitForDespawn"), "at the end");
+        });
+
+        // --- Languages file
+        Test("audit 02.11: a failed read of the languages file loses nobody's choice", () =>
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ct-lang-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "CarriageTracker.languages.txt");
+            System.IO.File.WriteAllLines(path, new[] { "1=ru", "7=en" });
+            var now = T0;
+            var store = new LanguageStore(path, l => l == "en" || l == "ru") { Now = () => now };
+            using (new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
+            {
+                Eq(null, store.Of(1), "file locked");
+                True(!store.Set(2, "ru"), "not written while unread");
+            }
+            Eq("ru", store.Of(2), "kept meanwhile");
+            now = T0.AddSeconds(31);
+            Eq("ru", store.Of(1), "read again later");
+            Eq("1=ru|7=en|2=ru", string.Join("|", System.IO.File.ReadAllLines(path)), "file");
+            True(store.Set(2, "ru"), "unchanged");
+            System.IO.Directory.Delete(dir, true);
+        });
+        Test("languages file of the old name is moved, missing file is an empty list", () =>
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ct-lang-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string old = System.IO.Path.Combine(dir, "Bazarov.CaravanTracker.languages.txt");
+            string path = System.IO.Path.Combine(dir, "CarriageTracker.languages.txt");
+            System.IO.File.WriteAllLines(old, new[] { "5=en" });
+            var store = new LanguageStore(path, l => l == "en" || l == "ru", old);
+            Eq("en", store.Of(5)); True(!System.IO.File.Exists(old) && System.IO.File.Exists(path), "moved");
+            var empty = new LanguageStore(System.IO.Path.Combine(dir, "none.txt"), l => true);
+            Eq(null, empty.Of(5)); True(empty.Loaded, "missing file read as empty");
+            True(empty.Set(5, "ru"), "written"); Eq("ru", new LanguageStore(System.IO.Path.Combine(dir, "none.txt"), l => true).Of(5));
+            System.IO.Directory.Delete(dir, true);
         });
 
         // --- Chat

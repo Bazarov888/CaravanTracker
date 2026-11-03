@@ -11,7 +11,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 public enum Kind { None, Container, Cart, Horse }
 
@@ -102,27 +102,7 @@ static class Caravans
                 scanned++;
                 var info = Classify(prefabs, em.GetComponentData<PrefabGUID>(e));
                 if (info.Kind == Kind.None || !seen.Add((e.Index, e.Version))) continue;
-                bool empty = info.Kind == Kind.Container && IsEmpty(em, e);
-                var pos = PositionOf(em, e);
-                bool frozen = false;
-                string status = null;
-                Entity patrol = Entity.Null;
-                Progress stops = null;
-                if (info.Kind == Kind.Cart && TryGetPatrol(em, e, out patrol))
-                {
-                    stops = Routes.StopsOf(em, patrol);
-                    status = Routes.MoveStatus(em, patrol);
-                    // With no players nearby the game freezes the caravan and moves the cart to (10000, 10000).
-                    // Its real place is where the patrol stands that the horse follows.
-                    var patrolPos = PositionOf(em, patrol);
-                    if (!OnMap(pos) && OnMap(patrolPos))
-                    {
-                        pos = patrolPos;
-                        frozen = true;
-                    }
-                }
-                bool orphan = info.Kind == Kind.Cart && !frozen && OnMap(pos) && !Pulled(em, e, pos, status);
-                found.Add(new Found(info.Kind, info.Route, e, pos, empty, frozen, status, patrol, stops, orphan));
+                found.Add(Describe(em, e, info));
             }
         }
         finally
@@ -130,6 +110,40 @@ static class Caravans
             entities.Dispose();
             query.Dispose();
         }
+    }
+
+    static Found Describe(EntityManager em, Entity e, (Kind Kind, string Route) info)
+    {
+        bool empty = info.Kind == Kind.Container && IsEmpty(em, e);
+        var pos = PositionOf(em, e);
+        bool frozen = false;
+        string status = null;
+        Entity patrol = Entity.Null;
+        Progress stops = null;
+        if (info.Kind == Kind.Cart && TryGetPatrol(em, e, out patrol))
+        {
+            stops = Routes.StopsOf(em, patrol);
+            status = Routes.MoveStatus(em, patrol);
+            // With no players nearby the game freezes the caravan and moves the cart to (10000, 10000).
+            // Its real place is where the patrol stands that the horse follows.
+            var patrolPos = PositionOf(em, patrol);
+            if (!OnMap(pos) && OnMap(patrolPos))
+            {
+                pos = patrolPos;
+                frozen = true;
+            }
+        }
+        bool orphan = info.Kind == Kind.Cart && !frozen && OnMap(pos) && !Pulled(em, e, pos, status);
+        return new Found(info.Kind, info.Route, e, pos, empty, frozen, status, patrol, stops, orphan);
+    }
+
+    // One object looked at again (one the fast search missed before). null if it no longer exists or isn't a
+    // caravan object.
+    public static Found Recheck(EntityManager em, PrefabCollectionSystem prefabs, Entity e)
+    {
+        if (e == Entity.Null || !em.Exists(e) || !Has<PrefabGUID>(em, e)) return null;
+        var info = Classify(prefabs, em.GetComponentData<PrefabGUID>(e));
+        return info.Kind == Kind.None ? null : Describe(em, e, info);
     }
 
     // Fast search: moving carts by their component, standing containers among objects with an inventory.
@@ -202,7 +216,7 @@ static class Caravans
             var t = GameTypes.Find(typeName);
             info = (t, t == null ? default : ComponentType.ReadOnly(Il2CppType.From(t)));
             RawTypes[typeName] = info;
-            if (t == null) Plugin.Warn($"CaravanTracker: game type {typeName} not found");
+            if (t == null) Plugin.Warn($"CarriageTracker: game type {typeName} not found");
         }
         if (info.Type == null || e == Entity.Null || !em.Exists(e) || !em.HasComponent(e, info.Ct)) return null;
         void* ptr = em.GetComponentDataRawRO(e, info.Ct.TypeIndex);

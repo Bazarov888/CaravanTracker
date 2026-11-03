@@ -1,4 +1,4 @@
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Which found objects are caravans, and which caravans are announced.
 public static class CaravanRules

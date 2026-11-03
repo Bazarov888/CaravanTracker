@@ -10,13 +10,15 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Caravan routes. Each route is a game patrol (GlobalPatrolState + UnitCompositionSpawner)
 // whose squad includes the horse CHAR_CarriageHorse_<route>.
 static class Routes
 {
-    public record Route(Entity Patrol, string Key);
+    // Side: "east" or "west" when two patrols share the key (MilitiaCotton: the wiki's Eastern and Western
+    // Cotton, about 600 m apart), by where the patrols are; null otherwise.
+    public record Route(Entity Patrol, string Key, string Side = null);
 
     static List<Route> _cache;
     static DateTime _cacheAt;
@@ -67,7 +69,29 @@ static class Routes
             query.Dispose();
         }
         result.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+        // Exactly two patrols of one key: the one farther east (greater x, as .cv m directions count) is "east".
+        for (int i = 0; i < result.Count;)
+        {
+            int j = i;
+            while (j < result.Count && result[j].Key == result[i].Key) j++;
+            if (j - i == 2)
+            {
+                bool firstEast = Caravans.PositionOf(em, result[i].Patrol).x > Caravans.PositionOf(em, result[i + 1].Patrol).x;
+                result[i] = result[i] with { Side = firstEast ? "east" : "west" };
+                result[i + 1] = result[i + 1] with { Side = firstEast ? "west" : "east" };
+            }
+            i = j;
+        }
         return result;
+    }
+
+    // Readable route name for chat, with the side when two patrols share the key.
+    public static string Name(Route r) => L.Route(r.Key, r.Side);
+
+    public static string Name(string key, Entity patrol)
+    {
+        var known = _cache?.Find(r => r.Patrol == patrol);
+        return L.Route(key, known?.Key == key ? known.Side : null);
     }
 
     internal static Entity AsEntity(object o) =>
@@ -122,7 +146,9 @@ static class Routes
     {
         if (patrol == Entity.Null || !em.Exists(patrol) || !Caravans.Has<GlobalPatrolState>(em, patrol)) return null;
         var gp = em.GetComponentData<GlobalPatrolState>(patrol);
-        return new Progress((int)gp.CurrentBusStopIndex, (int)gp.StartBusStopIndex, StopCount(em, patrol));
+        // Sequential: the path goes round with no end (Oakveil); Sequential_Once: it ends at the last stop.
+        bool loop = gp.PatrolType.ToString() == "Sequential";
+        return new Progress((int)gp.CurrentBusStopIndex, (int)gp.StartBusStopIndex, StopCount(em, patrol), loop);
     }
 
     // "stop 3 of 7" for chat, empty if unknown.
@@ -147,7 +173,7 @@ static class Routes
             {
                 _stopType = GameTypes.Find("PatrolBusStopNode");
                 _stopTypeLooked = true;
-                if (_stopType == null) Plugin.Warn("CaravanTracker: game type PatrolBusStopNode not found, stop counts unknown");
+                if (_stopType == null) Plugin.Warn("CarriageTracker: game type PatrolBusStopNode not found, stop counts unknown");
             }
             if (_stopType != null && em.HasComponent(patrol, ComponentType.ReadOnly(Il2CppType.From(_stopType))))
             {
@@ -164,7 +190,7 @@ static class Routes
         catch (Exception e)
         {
             var inner = e.InnerException ?? e;
-            Plugin.Warn($"CaravanTracker: stops of patrol {patrol.Index}:{patrol.Version} unknown: {inner.Message}");
+            Plugin.Warn($"CarriageTracker: stops of patrol {patrol.Index}:{patrol.Version} unknown: {inner.Message}");
         }
         StopCounts[key] = n;
         return n;
@@ -180,7 +206,7 @@ static class Routes
         string spawner = Caravans.Has<UnitCompositionSpawner>(em, patrol)
             ? em.GetComponentData<UnitCompositionSpawner>(patrol).SpawnerState.ToString() : "?";
         return new RouteSnap(key, MoveStatus(em, patrol), spawner, StopsOf(em, patrol), units.Count, onMap, carts,
-                             Starter.IsRunning(patrol), key != null && Starter.RecentlyFailed(key));
+                             Starter.IsRunning(patrol), key != null && Starter.RecentlyFailed(patrol), $"{patrol.Index}:{patrol.Version}");
     }
 
     public static RouteSnap Snap(EntityManager em, Route r) => Snap(em, r.Patrol, r.Key);
@@ -194,6 +220,7 @@ static class Routes
             RouteState.AtEnd => s.Units > 0 ? L.T("route.state.endguarded") : L.T("route.state.endempty"),
             // The cart was destroyed: the horse (and maybe some guards) walk on to the end of the route.
             RouteState.CartLost or RouteState.FrozenLeftover => L.T("route.state.nocart"),
+            RouteState.LoopLeftover => L.T("route.state.loopleft"),
             _ when s.WaitingForSpawn => L.T("route.state.waiting"),
             _ when s.Units > 0 && s.Move == "Moving" => L.T("route.state.moving"),
             _ => L.T("route.state.other", s.Spawner, s.Move, s.Units),

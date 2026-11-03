@@ -10,7 +10,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 static class Icons
 {
@@ -99,7 +99,7 @@ static class Icons
         int created = 0;
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(iconGuid), out Entity iconPrefab))
         {
-            Plugin.Warn($"CaravanTracker: icon prefab {iconGuid} not found, no icons created");
+            Plugin.Warn($"CarriageTracker: icon prefab {iconGuid} not found, no icons created");
             return (0, removed, globalized);
         }
         foreach (var kv in wanted)
@@ -122,23 +122,47 @@ static class Icons
 // (MapIcon_ProxyObject_POI_Unknown), like KindredPortals does. The game sends such markers to players
 // regardless of distance. The marker is placed at the caravan and recreated when the caravan
 // moves farther than MoveThreshold meters. Also used for frozen caravans in direct mode.
+// Other mods make the same markers (KindredPortals: SpawnedBy = a player's character, an icon of the player's
+// choice), so only markers of this mod are touched (Owned).
 static class Proxies
 {
     const int ProxyGuid = 636813227; // MapIcon_ProxyObject_POI_Unknown
     const float MoveThreshold = 10f;
-    static int _pending;
+    static (int, int) Key(Entity e) => (e.Index, e.Version);
+
+    // Markers this mod made since the server start, and of them those whose icon the game hasn't made yet
+    // (it is made global as soon as it appears, see GlobalizeNewIcons).
+    static readonly HashSet<(int, int)> Created = new();
+    static readonly HashSet<(int, int)> Pending = new();
     static DateTime _pendingUntil;
 
-    internal static bool HasPending => _pending > 0;
+    internal static bool HasPending => Pending.Count > 0;
 
-    static bool IsOurProxy(EntityManager em, Entity p) =>
-        p != Entity.Null && em.Exists(p) && Caravans.Has<SpawnedBy>(em, p) && Caravans.Has<PrefabGUID>(em, p)
-        && em.GetComponentData<PrefabGUID>(p).GuidHash == ProxyGuid;
+    // One icon requested, of one of the given kinds.
+    static bool RequestsOneOf(EntityManager em, Entity p, HashSet<int> kinds)
+    {
+        if (!em.HasBuffer<AttachMapIconsToEntity>(p)) return false;
+        var buf = em.GetBuffer<AttachMapIconsToEntity>(p);
+        return buf.Length == 1 && kinds.Contains(buf[0].Prefab.GuidHash);
+    }
+
+    // A marker of this mod: made by it since the server start; or, after a restart (the list above isn't saved
+    // and entity numbers change), a marker that asks for one icon of the mod's kinds and was spawned by a caravan
+    // object or by something that no longer exists (a caravan gone while the server was off). Until 1.0.10 every
+    // such marker not on a wanted caravan was removed, KindredPortals' included (audit 02.11).
+    static bool Owned(EntityManager em, PrefabCollectionSystem prefabs, Entity p, HashSet<int> kinds)
+    {
+        if (Created.Contains(Key(p))) return true;
+        if (!RequestsOneOf(em, p, kinds)) return false;
+        var t = em.GetComponentData<SpawnedBy>(p).Value;
+        return t == Entity.Null || !em.Exists(t) || Caravans.IsCaravanEntity(em, prefabs, t);
+    }
 
     // Called from the patch before MapIconSpawnSystem while new icons on our markers are expected.
+    // Each marker is done once its icon has been seen; with GlobalIcons off nothing is waited for.
     internal static void GlobalizeNewIcons()
     {
-        if (DateTime.UtcNow > _pendingUntil) { _pending = 0; return; }
+        if (DateTime.UtcNow > _pendingUntil || !Settings.GlobalIcons.Value) { Pending.Clear(); return; }
         var world = Caravans.ServerWorld();
         if (world == null) return;
         var em = world.EntityManager;
@@ -153,8 +177,11 @@ static class Proxies
         {
             foreach (var icon in icons)
             {
-                if (!IsOurProxy(em, em.GetComponentData<Attach>(icon).Parent)) continue;
-                if (Icons.MakeGlobal(em, icon) && --_pending <= 0) break;
+                var parent = Key(em.GetComponentData<Attach>(icon).Parent);
+                if (!Pending.Contains(parent)) continue;
+                Icons.MakeGlobal(em, icon);
+                Pending.Remove(parent);
+                if (Pending.Count == 0) break;
             }
         }
         finally
@@ -170,12 +197,6 @@ static class Proxies
         if (Caravans.Has<LocalToWorld>(em, e)) em.SetComponentData(e, new LocalToWorld { Value = float4x4.Translate(pos) });
     }
 
-    static bool RequestsIcon(EntityManager em, Entity p, int iconGuid)
-    {
-        if (!em.HasBuffer<AttachMapIconsToEntity>(p)) return false;
-        var buf = em.GetBuffer<AttachMapIconsToEntity>(p);
-        return buf.Length == 1 && buf[0].Prefab.GuidHash == iconGuid;
-    }
 
     static List<Entity> Attached(EntityManager em, Entity p)
     {
@@ -195,6 +216,8 @@ static class Proxies
     {
         var attached = Attached(em, p);
         foreach (var e in attached) em.DestroyEntity(e);
+        Created.Remove(Key(p));
+        Pending.Remove(Key(p));
         em.DestroyEntity(p);
         return attached.Count;
     }
@@ -202,14 +225,17 @@ static class Proxies
     public static (int Created, int Removed, int Globalized) Sync(EntityManager em, PrefabCollectionSystem prefabs, List<Caravans.Caravan> caravans)
     {
         int iconGuid = Settings.IconGuid;
+        var current = new HashSet<int> { iconGuid };
+        var kinds = Icons.Ours();
+        kinds.UnionWith(Settings.IconPresets.Values);
         var wanted = new Dictionary<(int, int), Caravans.Caravan>();
         foreach (var c in caravans) wanted[(c.Target.Index, c.Target.Version)] = c;
         var covered = new HashSet<(int, int)>();
         var drop = new List<Entity>();
         int created = 0, removed = 0, globalized = 0;
 
-        // Our markers: a POI_Unknown object with SpawnedBy = caravan. A marker stays if the caravan
-        // is still wanted, the icon is of the current kind and the caravan hasn't moved away. Others are removed.
+        // Our markers (Owned): a marker stays if its caravan is still wanted, the icon is of the current kind and
+        // the caravan hasn't moved away. Others of ours are removed; markers of other mods are left alone.
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<PrefabGUID>()))
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<SpawnedBy>()))
@@ -222,10 +248,10 @@ static class Proxies
         {
             foreach (var p in proxies)
             {
-                if (em.GetComponentData<PrefabGUID>(p).GuidHash != ProxyGuid) continue;
+                if (em.GetComponentData<PrefabGUID>(p).GuidHash != ProxyGuid || !Owned(em, prefabs, p, kinds)) continue;
                 var t = em.GetComponentData<SpawnedBy>(p).Value;
                 var key = (t.Index, t.Version);
-                if (em.Exists(t) && wanted.TryGetValue(key, out var c) && RequestsIcon(em, p, iconGuid)
+                if (em.Exists(t) && wanted.TryGetValue(key, out var c) && RequestsOneOf(em, p, current)
                     && Caravans.Dist2(Caravans.PositionOf(em, p), c.Pos) < MoveThreshold && covered.Add(key))
                 {
                     foreach (var icon in Attached(em, p))
@@ -244,7 +270,7 @@ static class Proxies
 
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(ProxyGuid), out Entity proxyPrefab))
         {
-            Plugin.Warn($"CaravanTracker: proxy prefab {ProxyGuid} not found, no proxy icons created");
+            Plugin.Warn($"CarriageTracker: proxy prefab {ProxyGuid} not found, no proxy icons created");
             return (0, removed, globalized);
         }
         foreach (var kv in wanted)
@@ -255,7 +281,7 @@ static class Proxies
             if (!em.HasBuffer<AttachMapIconsToEntity>(proxy))
             {
                 em.DestroyEntity(proxy);
-                Plugin.Warn("CaravanTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
+                Plugin.Warn("CarriageTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
                 break;
             }
             SetPos(em, proxy, c.Pos);
@@ -266,13 +292,11 @@ static class Proxies
             var buf = em.GetBuffer<AttachMapIconsToEntity>(proxy);
             buf.Clear();
             buf.Add(new AttachMapIconsToEntity { Prefab = new PrefabGUID(iconGuid) });
+            Created.Add(Key(proxy));
+            if (Settings.GlobalIcons.Value) Pending.Add(Key(proxy));
             created++;
         }
-        if (created > 0)
-        {
-            _pending += created;
-            _pendingUntil = DateTime.UtcNow.AddSeconds(10);
-        }
+        if (created > 0 && Settings.GlobalIcons.Value) _pendingUntil = DateTime.UtcNow.AddSeconds(10);
         return (created, removed, globalized);
     }
 }
@@ -286,6 +310,6 @@ static class MapIconSpawnPatch
     {
         if (!Proxies.HasPending) return;
         try { Proxies.GlobalizeNewIcons(); }
-        catch (Exception e) { Plugin.Error($"CaravanTracker: {e}"); }
+        catch (Exception e) { Plugin.Error($"CarriageTracker: {e}"); }
     }
 }

@@ -1,4 +1,4 @@
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Values the mod writes into a route's UnitCompositionSpawner, and when.
 // PlayerRange (x, y): the game spawns the squad only for a player within y meters of the patrol point.

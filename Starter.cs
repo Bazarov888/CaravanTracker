@@ -10,7 +10,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
 // Forced caravan start. The game updates a patrol and spawns its squad only when a player is near.
 // Here the patrol is unfrozen, spawning is allowed without a player and without waiting, and the new
@@ -26,10 +26,13 @@ static partial class Starter
         public bool Auto;
         public int Act;
         public bool Reset;
+        public bool Loop;                                              // the route has no end (Oakveil)
+        public int Expected;                                           // units in the route's squad, 0 if unknown
         public float3 StartPos;                                        // where the patrol stood at the start
         public readonly RunState State = new();
         public readonly Dictionary<string, object> Saved = new();    // the route's own spawner values
         public readonly HashSet<(int, int)> Awake = new();           // units and carts the mod keeps from freezing
+        public readonly HashSet<(int, int)> BuffsRemoved = new();    // units whose leftover spawn buff was removed
         public string LastState = "";
         public int Blocked;
         public int OverLimit;
@@ -45,11 +48,12 @@ static partial class Starter
     public static bool Any => Runs.Count > 0;
     public static bool IsRunning(Entity patrol) => Runs.Exists(r => r.Patrol == patrol);
 
-    // A route whose start failed (no squad appeared) is skipped by auto-start for an hour,
-    // so one broken route doesn't take every start of its act.
-    static readonly Dictionary<string, DateTime> FailedAt = new();
-    public static bool RecentlyFailed(string route) =>
-        FailedAt.TryGetValue(route, out var t) && DateTime.UtcNow < t.AddMinutes(60);
+    // A route whose start failed (no squad appeared, or a woken route didn't go back to its first stop) is skipped
+    // by auto-start for an hour, so one broken route doesn't take every start of its act. Kept by patrol: the
+    // other MilitiaCotton patrol isn't skipped with it.
+    static readonly Dictionary<(int, int), DateTime> FailedAt = new();
+    public static bool RecentlyFailed(Entity patrol) =>
+        FailedAt.TryGetValue(Key(patrol), out var t) && DateTime.UtcNow < t.AddMinutes(60);
 
     // Caravans started by auto-start that still have their cart: all of them (act = 0) or in one act.
     // A run whose cart is destroyed goes on until its last units reach the end of the route,
@@ -68,7 +72,7 @@ static partial class Starter
         if (Tags.TryGetValue(name, out var cached)) return cached;
         var t = GameTypes.Find(name);
         ComponentType? ct = t == null ? null : ComponentType.ReadWrite(Il2CppType.From(t));
-        if (t == null) Plugin.Warn($"CaravanTracker start: game type {name} not found");
+        if (t == null) Plugin.Warn($"CarriageTracker start: game type {name} not found");
         Tags[name] = ct;
         return ct;
     }
@@ -90,13 +94,13 @@ static partial class Starter
         try
         {
             var f = boxed.GetType().GetField(name);
-            if (f == null) { Plugin.Warn($"CaravanTracker start: spawner field {name} not found"); return; }
+            if (f == null) { Plugin.Warn($"CarriageTracker start: spawner field {name} not found"); return; }
             if (value != null && f.FieldType != value.GetType() && value is IConvertible) value = Convert.ChangeType(value, f.FieldType);
             f.SetValue(boxed, value);
         }
         catch (Exception e)
         {
-            Plugin.Warn($"CaravanTracker start: can't set spawner field {name}: {e.Message}");
+            Plugin.Warn($"CarriageTracker start: can't set spawner field {name}: {e.Message}");
         }
     }
 
@@ -120,7 +124,7 @@ static partial class Starter
                     em.SetComponentData(unit, lt);
                 }
             }
-            Plugin.Trace($"CaravanTracker start: unit {unit.Index}:{unit.Version} was frozen, woke it up");
+            Plugin.Trace($"CarriageTracker start: unit {unit.Index}:{unit.Version} was frozen, woke it up");
         }
     }
 
@@ -128,7 +132,7 @@ static partial class Starter
     public static string Start(EntityManager em, Routes.Route route, Entity userEntity, bool auto = false, int act = 0, string note = "")
     {
         var patrol = route.Patrol;
-        string name = L.Route(route.Key);
+        string name = Routes.Name(route);
         if (Paused) return L.T("cleanup.paused");
         if (IsRunning(patrol)) return L.T("start.already", name);
         var run = new Run { Patrol = patrol, Route = route.Key, User = userEntity, Auto = auto, Act = act };
@@ -146,6 +150,8 @@ static partial class Starter
         run.StartPos = posBefore;
         bool reset = Settings.ResetToStart.Value && ResetToStart(em, patrol, before);
         run.Reset = reset;
+        run.Loop = before?.Loop ?? false;
+        run.Expected = SquadSize(em, patrol);
 
         // 2. The route's own spawner values are saved to restore them later. A route at its last stop is
         // woken first with spawning off (RunLogic.ReadyToArm); any other one may spawn at once.
@@ -168,13 +174,33 @@ static partial class Starter
 
         var stops = Routes.StopsOf(em, patrol);
         Runs.Add(run);
-        Plugin.Info($"CaravanTracker start: patrol {patrol.Index}:{patrol.Version} route {route.Key}{(auto ? $" (auto, act {act}{note})" : "")}, " +
+        Plugin.Info($"CarriageTracker start: patrol {patrol.Index}:{patrol.Version} route {route.Key}{(auto ? $" (auto, act {act}{note})" : "")}, " +
                     $"stop {stops?.Log}{(reset ? $" (put back from stop {before?.Log})" : "")} at ({Math.Round(posBefore.x)}, {Math.Round(posBefore.z)}), " +
+                    $"squad of {(run.Expected > 0 ? run.Expected.ToString() : "?")}, " +
                     $"removed {units.Count} units and {carts.Count} carts" +
                     (run.State.Phase == RunPhase.Waking ? "; at its last stop: waking it before the squad may spawn" : ""));
         bool midway = RouteLogic.NeedsReset(stops, Routes.MoveStatus(em, patrol));
         return L.T("start.ok", name, units.Count, carts.Count, Routes.StopText(stops)) +
                (reset ? L.T("start.reset", Routes.StopText(before)) : midway ? L.T("start.midway") : "");
+    }
+
+    // Units in one squad of the route: the largest group of its composition (the game picks one group per
+    // squad; militia and bandit routes have three groups of 8). 0 if unknown.
+    static int SquadSize(EntityManager em, Entity patrol)
+    {
+        try
+        {
+            if (!em.HasBuffer<UnitCompositionGroupEntry>(patrol)) return 0;
+            var groups = em.GetBuffer<UnitCompositionGroupEntry>(patrol);
+            int n = 0;
+            for (int i = 0; i < groups.Length; i++) n = Math.Max(n, (int)groups[i].UnitsCount);
+            return n;
+        }
+        catch (Exception e)
+        {
+            Plugin.Warn($"CarriageTracker start: squad size of patrol {patrol.Index}:{patrol.Version} unknown: {e.Message}");
+            return 0;
+        }
     }
 
     // Spawning without a player nearby and without waiting.
@@ -216,7 +242,7 @@ static partial class Starter
         }
         catch (Exception e)
         {
-            Plugin.Warn($"CaravanTracker start: can't put patrol {patrol.Index}:{patrol.Version} back to the start: {e.Message}");
+            Plugin.Warn($"CarriageTracker start: can't put patrol {patrol.Index}:{patrol.Version} back to the start: {e.Message}");
             return false;
         }
     }
@@ -245,23 +271,32 @@ static partial class Starter
         try
         {
             var f = boxed.GetType().GetField(name);
-            if (f == null) { Plugin.Warn($"CaravanTracker start: spawner field {name} not found"); return; }
+            if (f == null) { Plugin.Warn($"CarriageTracker start: spawner field {name} not found"); return; }
             f.SetValue(boxed, f.FieldType.IsValueType ? Activator.CreateInstance(f.FieldType) : null);
         }
         catch (Exception e)
         {
-            Plugin.Warn($"CaravanTracker start: can't reset spawner field {name}: {e.Message}");
+            Plugin.Warn($"CarriageTracker start: can't reset spawner field {name}: {e.Message}");
         }
     }
 
     // End of a run: the route gets its settings back, and units that are still alive (the run timed out
     // or was stopped by command) may freeze without players again, as all units of the game do.
+    // If the settings can't be written, the route is repaired again every 5 seconds (RetryRepairs).
     static void Finish(EntityManager em, Run run, string why)
     {
         if (!run.State.Restored)
         {
-            RestoreSpawner(em, run);
-            run.State.Restored = true;
+            try
+            {
+                RestoreSpawner(em, run);
+                run.State.Restored = true;
+            }
+            catch (Exception e)
+            {
+                QueueRepair(run.Patrol, run.Route);
+                Plugin.Error($"CarriageTracker start: {Id(run)}: can't give the route its settings back, will try again: {e.Message}");
+            }
         }
         int back = 0;
         if (em.Exists(run.Patrol))
@@ -278,7 +313,7 @@ static partial class Starter
                 back++;
             }
         }
-        Plugin.Info($"CaravanTracker start: {Id(run)} finished after {Math.Round((DateTime.UtcNow - run.State.Started).TotalMinutes)} min: {why}" +
+        Plugin.Info($"CarriageTracker start: {Id(run)} finished after {Math.Round((DateTime.UtcNow - run.State.Started).TotalMinutes)} min: {why}" +
                     (back > 0 ? $", {back} units left may freeze again" : ""));
     }
 
@@ -299,7 +334,7 @@ static partial class Starter
             string state = em.Exists(run.Patrol) ? Routes.Describe(em, run.Patrol) : L.T("status.gone");
             string stops = Routes.StopText(Routes.StopsOf(em, run.Patrol));
             if (stops.Length > 0) state += ", " + stops;
-            parts.Add(L.T("status.item", L.Route(run.Route), run.Auto ? L.T("status.auto", L.Act(run.Act)) : "", state,
+            parts.Add(L.T("status.item", Routes.Name(run.Route, run.Patrol), run.Auto ? L.T("status.auto", L.Act(run.Act)) : "", state,
                           Math.Round((DateTime.UtcNow - run.State.Started).TotalMinutes)));
         }
         return ChatLines.Pack(parts, "; ");
@@ -331,11 +366,11 @@ static partial class Starter
                 // One broken start must not stop the others. After 10 errors in a row it is given up.
                 run.Errors++;
                 if (run.Errors == 1 || run.Errors == 10)
-                    Plugin.Error($"CaravanTracker start: route {run.Route}, error {run.Errors}: {e}");
+                    Plugin.Error($"CarriageTracker start: route {run.Route}, error {run.Errors}: {e}");
                 if (run.Errors >= 10)
                 {
                     try { Finish(em, run, "given up after 10 errors in a row"); }
-                    catch (Exception e2) { Plugin.Error($"CaravanTracker start: route {run.Route} can't be finished: {e2.Message}"); }
+                    catch (Exception e2) { Plugin.Error($"CarriageTracker start: route {run.Route} can't be finished: {e2.Message}"); }
                     Runs.RemoveAt(i);
                 }
             }
@@ -354,14 +389,21 @@ static partial class Starter
             var at = Routes.StopsOf(em, run.Patrol);
             float moved = Caravans.Dist2(patrolPos, run.StartPos);
             string spawner = em.GetComponentData<UnitCompositionSpawner>(run.Patrol).SpawnerState.ToString();
-            if (!RunLogic.ReadyToArm(s, now, Routes.MoveStatus(em, run.Patrol) == "WaitForDespawn", at?.AtStart ?? false, moved,
-                                     spawner == "WaitingForSpawn", out bool timedOut))
-                return false;
-            Arm(em, run);
+            var wake = RunLogic.ReadyToArm(s, now, Routes.MoveStatus(em, run.Patrol) == "WaitForDespawn", at?.AtStart ?? false, moved,
+                                           spawner == "WaitingForSpawn");
+            if (wake == WakeStep.Wait) return false;
             string where = $"stop {at?.Log} at ({Math.Round(patrolPos.x)}, {Math.Round(patrolPos.z)}), {Math.Round(moved)} m from its last stop, " +
                            $"spawner {spawner}, {Math.Round((now - s.Started).TotalSeconds)} s after waking";
-            if (timedOut) Plugin.Warn($"CaravanTracker start: {Id(run)}: the route didn't go back to its first stop by itself ({where}); the squad may spawn where it stands");
-            else Plugin.Info($"CaravanTracker start: {Id(run)}: the game returned the route to its first stop ({where}); the squad may spawn");
+            if (wake == WakeStep.GiveUp)
+            {
+                Finish(em, run, $"the route didn't go back to its first stop by itself in {RunLogic.WakeMax.TotalSeconds} s ({where}); " +
+                                "start given up, auto-start skips this route for an hour");
+                FailedAt[Key(run.Patrol)] = now;
+                Chat.Send(em, run.User, () => L.T("start.wakefailed", Routes.Name(run.Route, run.Patrol)));
+                return true;
+            }
+            Arm(em, run);
+            Plugin.Info($"CarriageTracker start: {Id(run)}: the game returned the route to its first stop ({where}); the squad may spawn");
         }
         var units = Routes.ActiveUnits(em, run.Patrol);
         var byKey = new Dictionary<(int, int), Entity>();
@@ -369,15 +411,15 @@ static partial class Starter
         foreach (var u in units) { byKey[Key(u)] = u; keys.Add(Key(u)); }
         string move = Routes.MoveStatus(em, run.Patrol);
 
-        var step = RunLogic.Squad(s, now, move == "WaitForDespawn", keys, maxSquad);
+        var step = RunLogic.Squad(s, now, move == "WaitForDespawn", keys, maxSquad, run.Expected);
         if (step.JustSpawned)
         {
-            Chat.Send(em, run.User, () => L.T("start.spawned", L.Route(run.Route)));
+            Chat.Send(em, run.User, () => L.T("start.spawned", Routes.Name(run.Route, run.Patrol)));
             // Where the squad appeared, to see that a route put back to the start really sets out from there.
             var p = Routes.StopsOf(em, run.Patrol);
             var at = Caravans.PositionOf(em, units[0]);
             float fromStart = Caravans.Dist2(at, run.StartPos);
-            string msg = $"CaravanTracker start: {Id(run)}: squad appeared at stop {p?.Log} at ({Math.Round(at.x)}, {Math.Round(at.z)}), " +
+            string msg = $"CarriageTracker start: {Id(run)}: squad appeared at stop {p?.Log} at ({Math.Round(at.x)}, {Math.Round(at.z)}), " +
                          $"{Math.Round(fromStart)} m from where the route stood, {Math.Round((now - s.Started).TotalSeconds)} s after the start";
             // Putting a route back to the start changes its stop number; whether the game also moves the squad
             // there is told by the distance: next to where the route stood means the caravan walks back first.
@@ -390,31 +432,38 @@ static partial class Starter
         if (step.Replacements.Count > 0)
         {
             run.Blocked += step.Replacements.Count;
-            Plugin.Warn($"CaravanTracker start: {Id(run)}: removed {step.Replacements.Count} respawned guards (total {run.Blocked})");
+            Plugin.Warn($"CarriageTracker start: {Id(run)}: removed {step.Replacements.Count} respawned guards (total {run.Blocked})");
         }
         if (step.OverLimit.Count > 0)
         {
             run.OverLimit += step.OverLimit.Count;
-            Plugin.Warn($"CaravanTracker start: {Id(run)}: squad over MaxSquadSize {maxSquad}, removed {step.OverLimit.Count} units (total {run.OverLimit})");
+            Plugin.Warn($"CarriageTracker start: {Id(run)}: squad over MaxSquadSize {maxSquad}, removed {step.OverLimit.Count} units (total {run.OverLimit})");
         }
         var remaining = new List<Entity>();
         foreach (var k in step.Remaining) remaining.Add(byKey[k]);
+        var carts = remaining.Count > 0 ? Routes.CartsOf(em, remaining) : new List<Entity>();
+        // The game's spawn buff left on a member long after it appeared makes it take no damage (02.11).
+        foreach (var k in step.Remaining)
+            if (RunLogic.PastSpawn(s, k, now)) RemoveSpawnBuffs(em, prefabs, run, byKey[k], now);
+        if (RunLogic.PastSpawn(s, null, now))
+            foreach (var c in carts) RemoveSpawnBuffs(em, prefabs, run, c, now);
         if (step.Assembled)
         {
+            // Restored only after the write: if it throws, the next second asks again (RunLogic.Squad).
             RestoreSpawner(em, run);
-            Plugin.Info($"CaravanTracker start: {Id(run)}: squad assembled, {step.Remaining.Count} units " +
+            s.Restored = true;
+            Plugin.Info($"CarriageTracker start: {Id(run)}: squad assembled, {step.Remaining.Count} units " +
                         $"{Math.Round((now - s.SpawnedAt).TotalSeconds)} s after the first one; the route has its own settings back");
             LogAnimal(em, prefabs, run, remaining, "at assembly");
         }
-        var carts = remaining.Count > 0 ? Routes.CartsOf(em, remaining) : new List<Entity>();
         foreach (var u in remaining) KeepAwake(em, run, u, patrolPos);
         foreach (var c in carts) KeepAwake(em, run, c, patrolPos);
 
         var end = RunLogic.Outcome(s, now, remaining.Count, carts.Count, move == "WaitForDespawn", TimeSpan.FromMinutes(spawnTimeout),
-                                   TimeSpan.FromMinutes(maxRun), out bool cartJustLost);
+                                   TimeSpan.FromMinutes(maxRun), out bool cartJustLost, run.Loop);
         if (cartJustLost)
         {
-            Plugin.Info($"CaravanTracker start: {Id(run)}: the cart is gone, {remaining.Count} units go on to the end of the route; " +
+            Plugin.Info($"CarriageTracker start: {Id(run)}: the cart is gone, {remaining.Count} units go on to the end of the route; " +
                         "not counted in auto-start limits any more");
             LogAnimal(em, prefabs, run, remaining, "after its cart was lost");
         }
@@ -425,7 +474,7 @@ static partial class Starter
         string state = $"spawner={sp.SpawnerState} stop={Routes.StopsOf(em, run.Patrol)?.Log} units={remaining.Count}";
         if (state != run.LastState)
         {
-            Plugin.Trace($"CaravanTracker start: {Id(run)} {state} move={move} at ({Math.Round(patrolPos.x)}, {Math.Round(patrolPos.z)})");
+            Plugin.Trace($"CarriageTracker start: {Id(run)} {state} move={move} at ({Math.Round(patrolPos.x)}, {Math.Round(patrolPos.z)})");
             run.LastState = state;
         }
 
@@ -433,12 +482,16 @@ static partial class Starter
         {
             case RunEnd.NoSpawn:
                 Finish(em, run, $"no units after {spawnTimeout} minutes; auto-start skips this route for an hour");
-                FailedAt[run.Route] = now;
-                Chat.Send(em, run.User, () => L.T("start.failed", L.Route(run.Route), spawnTimeout));
+                FailedAt[Key(run.Patrol)] = now;
+                Chat.Send(em, run.User, () => L.T("start.failed", Routes.Name(run.Route, run.Patrol), spawnTimeout));
                 return true;
             case RunEnd.Done:
                 Finish(em, run, "route completed or caravan destroyed");
-                Chat.Send(em, run.User, () => L.T("start.done", L.Route(run.Route)));
+                Chat.Send(em, run.User, () => L.T("start.done", Routes.Name(run.Route, run.Patrol)));
+                return true;
+            case RunEnd.LoopCartLost:
+                Finish(em, run, $"the cart is gone on a route without an end; {remaining.Count} units circle on, the next start there removes them");
+                Chat.Send(em, run.User, () => L.T("start.done", Routes.Name(run.Route, run.Patrol)));
                 return true;
             case RunEnd.StuckAtEnd:
                 // The game removes a squad at the last stop within seconds; this one stayed, so the mod removes it.

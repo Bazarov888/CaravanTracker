@@ -2,9 +2,10 @@ using System;
 using System.Collections.Generic;
 using BepInEx.Configuration;
 
-namespace CaravanTracker;
+namespace CarriageTracker;
 
-// Everything that can be set in BepInEx/config/Bazarov.CaravanTracker.cfg.
+// Everything that can be set in BepInEx/config/CarriageTracker.cfg (until 1.0.11 Bazarov.CaravanTracker.cfg,
+// moved on the first start: Plugin.MoveOldConfig).
 static class Settings
 {
     static ConfigFile _file;
@@ -38,6 +39,8 @@ static class Settings
     internal static ConfigEntry<string> RoutePick;
     internal static ConfigEntry<string> ExcludedRoutes;
     internal static ConfigEntry<string> RouteActs;
+    internal static ConfigEntry<string> PlayerAct;
+    internal static ConfigEntry<string> EmptyAct;
 
     internal static ConfigEntry<int> SpawnTimeoutMinutes;
     internal static ConfigEntry<int> MaxRunMinutes;
@@ -85,8 +88,8 @@ static class Settings
         Announce = cfg.Bind("Chat", "Announce", true,
             "Tell online players in chat when a caravan sets out, with distance and direction from them.");
         AnnounceTo = cfg.Bind("Chat", "AnnounceTo", "All",
-            new ConfigDescription("Who gets the announcement. All = every online player. SameAct = players of the caravan's act " +
-                                  "(a player in an act without routes counts for the nearest lower act with routes, as in auto-start). " +
+            new ConfigDescription("Who gets the announcement. All = every online player. SameAct = players who get caravans of that act " +
+                                  "(a player in an act without routes counts for the act EmptyAct gives them, as in auto-start). " +
                                   "Nearby = players closer than AnnounceRadius.",
                 new AcceptableValueList<string>("All", "SameAct", "Nearby")));
         AnnounceRadius = cfg.Bind("Chat", "AnnounceRadius", 1500,
@@ -130,8 +133,20 @@ static class Settings
         ExcludedRoutes = cfg.Bind("AutoStart", "ExcludedRoutes", "",
             "Routes auto-start never uses, comma separated, e.g. BanditPrisoners,ChurchLegion. Route names: .cv routes. .cv start still works for them.");
         RouteActs = cfg.Bind("AutoStart", "RouteActs", "",
-            "Manual act for routes, comma separated, e.g. MilitiaIron=2,ChuchSilver=4. Route names: .cv routes. " +
-            "By default the act comes from the guards' level, the same bounds as V Blood in the game's menu: up to 39 - I, 40-59 - II, 60-65 - III, 66+ - IV.");
+            "Manual acts for routes or whole regions, comma separated; several acts joined with +. " +
+            "E.g. Silverlight=3+4,Oakveil=4,MilitiaIron=2. Regions: Farbane, Dunley, Silverlight, Oakveil; route names: .cv routes. " +
+            "A route's own entry wins over its region's. By default a route's act comes from its guards' level, " +
+            "the same bounds as V Blood in the game's menu: up to 39 - I, 40-59 - II, 60-65 - III, 66+ - IV.");
+        PlayerAct = cfg.Bind("AutoStart", "PlayerAct", "VBlood",
+            new ConfigDescription("How a player's act is found. VBlood = the act of the highest V Blood drunk; the final V Blood of an act " +
+                                  "(Quincey, Octavian, Cyril) opens the next act at once. Level = by the character's level, same bounds as above " +
+                                  "(with Bloodcraft leveling it is the Bloodcraft level, without it the gear level). Highest = the higher of the two.",
+                new AcceptableValueList<string>("VBlood", "Level", "Highest")));
+        EmptyAct = cfg.Bind("AutoStart", "EmptyAct", "Higher",
+            new ConfigDescription("Which caravans a player gets when their act has no routes (act III has none in the game: no carriages " +
+                                  "in Gloomrot and the Cursed Forest). Higher = the next act up with routes. Lower = the next act down. " +
+                                  "Both = one of each. If there is none in that direction, the other one is used.",
+                new AcceptableValueList<string>("Higher", "Lower", "Both")));
 
         SpawnTimeoutMinutes = cfg.Bind("Start", "SpawnTimeoutMinutes", 5,
             new ConfigDescription("How long to wait for the squad of a started caravan to appear. After that the start counts as failed and the route gets its normal settings back.",
@@ -181,6 +196,12 @@ static class Settings
     public static bool GameOnly => (Source.Value ?? "").Trim().Equals("Game", StringComparison.OrdinalIgnoreCase);
 
     public static bool RotatePick => (RoutePick.Value ?? "").Trim().Equals("Rotate", StringComparison.OrdinalIgnoreCase);
+
+    public static PlayerActBy PlayerActMode =>
+        Enum.TryParse((PlayerAct?.Value ?? "").Trim(), true, out PlayerActBy v) ? v : PlayerActBy.VBlood;
+
+    public static EmptyActUse EmptyActMode =>
+        Enum.TryParse((EmptyAct?.Value ?? "").Trim(), true, out EmptyActUse v) ? v : EmptyActUse.Higher;
 
     public static bool AnnounceSameAct => (AnnounceTo.Value ?? "").Trim().Equals("SameAct", StringComparison.OrdinalIgnoreCase);
 

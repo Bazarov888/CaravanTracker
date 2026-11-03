@@ -1,4 +1,4 @@
-# How CaravanTracker works
+# How CarriageTracker works
 
 A server-side BepInEx (IL2CPP) plugin for V Rising. Nothing is installed on clients: everything players see
 (map icons, chat lines) is made of the game's own entities and messages.
@@ -44,7 +44,7 @@ A change of behaviour starts with a test case.
 | `Acts.cs` | Act of a player (by V Blood drunk) and of a route (by guard level). |
 | `Commands.cs` | Chat commands (VampireCommandFramework). |
 | `Loc.cs` | Chat texts in English and Russian; `L` answers in the language in use for the current player. |
-| `Languages.cs` | Each player's own language (`BepInEx/config/Bazarov.CaravanTracker.languages.txt`) and the VCF middleware that switches to it for every command of this mod. |
+| `Languages.cs` | Each player's own language (`BepInEx/config/CarriageTracker.languages.txt`) and the VCF middleware that switches to it for every command of this mod. |
 | `Diag.cs` | Developer commands `.cvdiag`, registered only with `EnableDiagnostics = true`. |
 
 ## Game model
