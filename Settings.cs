@@ -46,6 +46,7 @@ static class Settings
     internal static ConfigEntry<int> MaxRunMinutes;
     internal static ConfigEntry<int> MaxSquadSize;
     internal static ConfigEntry<bool> ResetToStart;
+    internal static ConfigEntry<bool> AnimalKeepsDamage;
 
     internal static ConfigEntry<int> CheckSeconds;
     internal static ConfigEntry<int> SafetyScanMinutes;
@@ -158,6 +159,9 @@ static class Settings
         ResetToStart = cfg.Bind("Start", "ResetToStart", true,
             "A route left mid-way by an earlier caravan is put back to the first stop of its path before the mod starts it: " +
             "the caravan walks to the first stop and then drives the whole way. false = it goes on from the stop where the route stands.");
+        AnimalKeepsDamage = cfg.Bind("Start", "AnimalKeepsDamage", true,
+            "The animal of a carriage started by the mod doesn't heal: when it breaks off in a fight and hitches up again, " +
+            "the game gives it full health back; the mod sets it back to the lowest health it had. false = as in the game.");
         MaxSquadSize = cfg.Bind("Start", "MaxSquadSize", 20,
             new ConfigDescription("Safety limit. Units above this number in a squad started by the mod are removed at once, so the game can't fill the server memory with guards.",
                 new AcceptableValueRange<int>(5, 100)));
