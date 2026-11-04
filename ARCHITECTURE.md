@@ -146,8 +146,9 @@ Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRu
 - Respawn guard: every unit that appears while the squad assembles is added to `Known`. Once a known unit is gone,
   a new unit is a replacement and is destroyed, unless `Known` is still smaller than the route's squad size: then
   it is a guard still on its way (a fight right at the start no longer strips the squad of its late guards).
-  Units above `MaxSquadSize` are destroyed too.
-- The start settings stay until the squad hasn't grown for 90 seconds (at most 4 minutes after the first unit),
+  Units above `MaxSquadSize` are destroyed too, and a cart pulled by a destroyed unit with it.
+- The start settings stay until the squad hasn't grown for 90 seconds (at most 4 minutes after the first unit), or
+  until a member is killed (04.11: a fight right after the spawn made the game send 126 units in 54 s with zero timers),
   then `RestoreSpawner` puts the saved spawner values back. A blocked or zero range is restored as the game's (0, 90).
   `RunState.Restored` is set only after the write; until then `RunLogic.Squad` asks for it every second.
 - A spawn buff left on a unit or cart 10 s after it appeared is removed (see Game model).
@@ -212,6 +213,9 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   edge: a KindredPortals marker with an icon of the mod's kinds whose character was deleted.
 - New markers' icons are made global as soon as the game creates them (`MapIconSpawnPatch`), each marker once;
   with `GlobalIcons = false` nothing is waited for.
+- Loot containers with loot get the game's removal time (`DestroyAfterDuration.EndTime`) pushed out to
+  `LootKeepMinutes` after they were first seen (`Loot.Keep`, `LootLogic`). The game's own timers, read on 04.11: 60 s,
+  ten times slower with a player within 20 m, and 60 s after something was taken.
 - An object only the full search found is remembered and looked at on every check after that, so it doesn't drop
   out of the list until the next full search.
 

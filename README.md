@@ -78,6 +78,7 @@ For admins:
 | Map | GlobalIcons | `true` | Icons visible to everyone on the whole map |
 | Map | IconMode | `direct` | `direct` or `proxy` |
 | Map | IconOnLoot | `true` | Icon on the loot left after a robbed carriage |
+| Map | LootKeepMinutes | `10` | How long the loot of a robbed carriage stays, while it has loot; `0` = the game's timers (60 s with nobody within 20 m) |
 | Map | IconOnFrozen | `true` | Icon on a carriage frozen mid-route because no players are near |
 | Chat | Announce | `true` | Chat announcement when a carriage sets out |
 | Chat | AnnounceTo | `All` | `All`, `SameAct` (players who get carriages of that act) or `Nearby` |

@@ -256,6 +256,13 @@ static class Program
             Eq(1, k.Replacements.Count, "replacements"); Eq(U(9), k.Replacements[0]); Eq(2, k.Remaining.Count, "remaining");
             True(s.LostAny, "lost");
         });
+        Test("04.11: a kill while the squad assembles gives the route its own timers back at once (126 respawns)", () =>
+        {
+            var s = new RunState { Started = T0 };
+            True(!RunLogic.Squad(s, T0, false, Us(1, 2, 3), Max, 8).Assembled, "assembling");
+            var k = RunLogic.Squad(s, T0.AddSeconds(30), false, Us(1, 2), Max, 8);
+            True(k.Assembled, "a member was killed 30 s after the spawn: restore now, not 90 s after the last growth");
+        });
         Test("audit 02.11: a guard still on its way after an early kill is a member, not a replacement", () =>
         {
             var s = new RunState { Started = T0 };
@@ -274,6 +281,13 @@ static class Program
             True(RunLogic.Squad(s, T0.AddSeconds(90), false, Us(1), Max).Assembled, "assembled");
             True(!s.Restored, "not marked before the write");
             True(RunLogic.Squad(s, T0.AddSeconds(91), false, Us(1), Max).Assembled, "the write failed: asked again");
+        });
+        Test("04.11: a loot container stays LootKeepMinutes after it was first seen", () =>
+        {
+            Eq((double?)1600, LootLogic.EndTime(1000, 600, 1060), "game's 60 s pushed out to 10 min");
+            Eq((double?)null, LootLogic.EndTime(1000, 600, 1600), "already there");
+            Eq((double?)null, LootLogic.EndTime(1000, 600, 1700), "the game's own is later");
+            Eq((double?)null, LootLogic.EndTime(1000, 0, 1060), "off");
         });
         Test("04.11: the animal doesn't heal back to full when it hitches up again", () =>
         {
