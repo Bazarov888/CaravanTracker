@@ -67,7 +67,47 @@ public class DiagCommands
         ctx.Reply($"{prefabName}, {Math.Round(bestDist)} m, components: {names.Count}. Full list in the server log.");
         for (int i = 0; i < names.Count; i += 6)
             ctx.Reply(string.Join(", ", names.GetRange(i, Math.Min(6, names.Count - i))));
+
+        // Values of the components that remove the object by time (a loot container vanished a minute after its
+        // cart was destroyed, 03.11), to the log and to chat.
+        var values = new List<string>();
+        var all = em.GetComponentTypes(best);
+        try
+        {
+            for (int i = 0; i < all.Length; i++)
+            {
+                var il2 = TypeManager.GetType(all[i].TypeIndex);
+                if (il2 == null || !IsTimer(il2.Name)) continue;
+                var managed = ManagedByFullName(il2.FullName);
+                string text;
+                if (managed == null || !managed.IsValueType) text = "(unreadable)";
+                else if (managed.GetFields(BindingFlags.Public | BindingFlags.Instance).Length == 0) text = "(tag without data)";
+                else
+                {
+                    try
+                    {
+                        var value = ReadRaw(em, best, all[i], managed);
+                        text = value == null ? "null" : Fields(value, em, prefabs, 0);
+                    }
+                    catch (Exception ex) { text = $"<{(ex.Message ?? "").Split('\n')[0]}>"; }
+                }
+                values.Add($"{il2.Name}: {text}");
+            }
+        }
+        finally
+        {
+            all.Dispose();
+        }
+        foreach (var v in values)
+        {
+            Plugin.Info($"CarriageTracker comps {prefabName} {v}");
+            foreach (var line in ChatLines.Pack(v.Split(", "), ", ")) ctx.Reply(line);
+        }
     }
+
+    static bool IsTimer(string name) =>
+        name.StartsWith("Destroy", StringComparison.Ordinal) || name.IndexOf("LifeTime", StringComparison.OrdinalIgnoreCase) >= 0 ||
+        name.StartsWith("Age", StringComparison.Ordinal);
 
     [Command("near", adminOnly: true, usage: "[radius]", description: "Objects around you with names and ids")]
     public void Near(ChatCommandContext ctx, int radius = 8)
