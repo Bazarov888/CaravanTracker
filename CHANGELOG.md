@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.13
+
+- `.cvdiag comps` also shows the values of the components that remove an object by time (`DestroyAfterDuration` and its kin, `LifeTime`), in chat and in the server log. A loot container vanished about a minute after its cart was destroyed while no player was near (03.11); its timers come next.
+
 ## 1.0.12
 
 - A route's act is now its region's (Farbane I, Dunley II, Silverlight and Oakveil IV) instead of its guards' level. The Draculin prison carriage of Dunley (`ChurchLegion`, vampires guarded by the Church of Luminance) is an act II carriage now; by its guards' level it landed outside act II, with the Silverlight routes (in the 1.0.10 log act II had only the four militia routes). A route of an unknown region still goes by its guards' level.
