@@ -124,8 +124,12 @@ public static class RunLogic
             step.Remaining.Add(u);
         }
         // Asked again every second until the executor has written the settings and set Restored: a write that
-        // failed is tried again (Finish does it too).
-        if (!s.Restored && (now - s.LastGrow >= AssemblyQuiet || now - s.SpawnedAt >= AssemblyMax))
+        // failed is tried again (Finish does it too). Also as soon as a member is lost: with the start's zero timers
+        // the game replaces every killed unit at once. On 04.11 players attacked a squad 30 s after it appeared,
+        // and the game sent 126 units in 54 s, among them a second animal with a second cart; the respawn guard
+        // removed the units but not the cart. With the route's own timers the game sends nothing new, while guards
+        // of the first spawn still on their way come as in a squad the game starts itself.
+        if (!s.Restored && (s.LostAny || now - s.LastGrow >= AssemblyQuiet || now - s.SpawnedAt >= AssemblyMax))
             step.Assembled = true;
         return step;
     }

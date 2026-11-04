@@ -256,6 +256,13 @@ static class Program
             Eq(1, k.Replacements.Count, "replacements"); Eq(U(9), k.Replacements[0]); Eq(2, k.Remaining.Count, "remaining");
             True(s.LostAny, "lost");
         });
+        Test("04.11: a kill while the squad assembles gives the route its own timers back at once (126 respawns)", () =>
+        {
+            var s = new RunState { Started = T0 };
+            True(!RunLogic.Squad(s, T0, false, Us(1, 2, 3), Max, 8).Assembled, "assembling");
+            var k = RunLogic.Squad(s, T0.AddSeconds(30), false, Us(1, 2), Max, 8);
+            True(k.Assembled, "a member was killed 30 s after the spawn: restore now, not 90 s after the last growth");
+        });
         Test("audit 02.11: a guard still on its way after an early kill is a member, not a replacement", () =>
         {
             var s = new RunState { Started = T0 };

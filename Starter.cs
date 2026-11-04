@@ -430,12 +430,19 @@ static partial class Starter
             else if (run.Reset && fromStart < RunLogic.SamePlace) Plugin.Warn(msg + "; put back to the start, but it appeared where the route stood: it walks to the first stop first");
             else Plugin.Info(msg);
         }
-        foreach (var k in step.Replacements) DestroyUtility.Destroy(em, byKey[k]);
-        foreach (var k in step.OverLimit) DestroyUtility.Destroy(em, byKey[k]);
+        // A replacement animal comes with its own cart, which isn't a squad unit: it goes with its animal (04.11: a
+        // second cart stayed on the road and was robbed too).
+        var extra = new List<Entity>();
+        foreach (var k in step.Replacements) extra.Add(byKey[k]);
+        foreach (var k in step.OverLimit) extra.Add(byKey[k]);
+        var extraCarts = extra.Count > 0 ? Routes.CartsOf(em, extra) : new List<Entity>();
+        foreach (var c in extraCarts) DestroyUtility.Destroy(em, c);
+        foreach (var e in extra) DestroyUtility.Destroy(em, e);
         if (step.Replacements.Count > 0)
         {
             run.Blocked += step.Replacements.Count;
-            Plugin.Warn($"CarriageTracker start: {Id(run)}: removed {step.Replacements.Count} respawned guards (total {run.Blocked})");
+            Plugin.Warn($"CarriageTracker start: {Id(run)}: removed {step.Replacements.Count} respawned guards (total {run.Blocked})" +
+                        (extraCarts.Count > 0 ? $" and {extraCarts.Count} extra carts" : ""));
         }
         if (step.OverLimit.Count > 0)
         {
@@ -455,8 +462,10 @@ static partial class Starter
             // Restored only after the write: if it throws, the next second asks again (RunLogic.Squad).
             RestoreSpawner(em, run);
             s.Restored = true;
-            Plugin.Info($"CarriageTracker start: {Id(run)}: squad assembled, {step.Remaining.Count} units " +
-                        $"{Math.Round((now - s.SpawnedAt).TotalSeconds)} s after the first one; the route has its own settings back");
+            Plugin.Info($"CarriageTracker start: {Id(run)}: " +
+                        (s.LostAny ? $"a member was killed {Math.Round((now - s.SpawnedAt).TotalSeconds)} s after the first one appeared, {step.Remaining.Count} units left"
+                                   : $"squad assembled, {step.Remaining.Count} units {Math.Round((now - s.SpawnedAt).TotalSeconds)} s after the first one") +
+                        "; the route has its own settings back");
             LogAnimal(em, prefabs, run, remaining, "at assembly");
         }
         foreach (var u in remaining) KeepAwake(em, run, u, patrolPos);

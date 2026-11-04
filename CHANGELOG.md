@@ -2,6 +2,7 @@
 
 ## 1.0.15
 
+- Fixed a doubled carriage. Players attacked a started squad before it had finished coming out, and with the start's zero respawn timers the game sent 126 replacement units in 54 seconds, among them a second animal with its own cart. The mod removed the units but not that cart, so a second cart stood on the road. Now the route gets its own timers back as soon as a member of the squad is killed, and a cart of a removed unit is removed with it.
 - The loot container of a robbed carriage stays 10 minutes after it appeared while it still has loot (new setting `Map.LootKeepMinutes`, 0 = the game's own timers). The game removes it 60 seconds after nobody is within 20 m and 60 seconds after something was taken (read with `.cvdiag comps` on 04.11), so a robber who died lost it.
 - The log of `AnimalKeepsDamage` tells only big heals (5% of the animal's health or more at once) and counts its regeneration (about 1 point a second) in the line of the finished run. Before, its first five lines all went to regeneration ticks.
 - `tools/deploy.sh` stops at once with a clear message when the server path has no `BepInEx/core`. A mistyped path made Docker create empty folders there and the build fail with hundreds of errors.
