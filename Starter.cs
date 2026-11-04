@@ -34,6 +34,7 @@ static partial class Starter
         public readonly HashSet<(int, int)> Awake = new();           // units and carts the mod keeps from freezing
         public readonly HashSet<(int, int)> BuffsRemoved = new();    // units whose leftover spawn buff was removed
         public int AnimalHeals;                                        // heals of the animal undone (AnimalKeepsDamage)
+        public int AnimalRegen;                                        // of them small ones, its regeneration
         public string LastState = "";
         public int Blocked;
         public int OverLimit;
@@ -315,7 +316,8 @@ static partial class Starter
             }
         }
         Plugin.Info($"CarriageTracker start: {Id(run)} finished after {Math.Round((DateTime.UtcNow - run.State.Started).TotalMinutes)} min: {why}" +
-                    (back > 0 ? $", {back} units left may freeze again" : ""));
+                    (back > 0 ? $", {back} units left may freeze again" : "") +
+                    (run.AnimalHeals + run.AnimalRegen > 0 ? $"; the animal's healing undone: {run.AnimalHeals} big, {run.AnimalRegen} regeneration ticks" : ""));
     }
 
     public static int StopAll(EntityManager em)

@@ -18,6 +18,7 @@ static class Settings
     internal static ConfigEntry<string> IconMode;
     internal static ConfigEntry<bool> IconOnLoot;
     internal static ConfigEntry<bool> IconOnFrozen;
+    internal static ConfigEntry<int> LootKeepMinutes;
 
     internal static ConfigEntry<bool> Announce;
     internal static ConfigEntry<string> AnnounceTo;
@@ -83,6 +84,11 @@ static class Settings
                 new AcceptableValueList<string>("direct", "proxy")));
         IconOnLoot = cfg.Bind("Map", "IconOnLoot", true,
             "Icon on the loot container left after a robbed caravan, while it still has loot.");
+        LootKeepMinutes = cfg.Bind("Map", "LootKeepMinutes", 10,
+            new ConfigDescription("How long the loot container of a robbed carriage stays, in minutes after it appeared, while it still has loot. " +
+                                  "The game removes it 60 seconds after nobody is within 20 m (about 10 minutes while someone is near) " +
+                                  "and 60 seconds after something was taken. 0 = the game's own timers.",
+                new AcceptableValueRange<int>(0, 120)));
         IconOnFrozen = cfg.Bind("Map", "IconOnFrozen", true,
             "Icon on a caravan that froze mid-route because no players are near. It wakes up and goes on when someone comes.");
 

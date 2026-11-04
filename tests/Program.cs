@@ -275,6 +275,13 @@ static class Program
             True(!s.Restored, "not marked before the write");
             True(RunLogic.Squad(s, T0.AddSeconds(91), false, Us(1), Max).Assembled, "the write failed: asked again");
         });
+        Test("04.11: a loot container stays LootKeepMinutes after it was first seen", () =>
+        {
+            Eq((double?)1600, LootLogic.EndTime(1000, 600, 1060), "game's 60 s pushed out to 10 min");
+            Eq((double?)null, LootLogic.EndTime(1000, 600, 1600), "already there");
+            Eq((double?)null, LootLogic.EndTime(1000, 600, 1700), "the game's own is later");
+            Eq((double?)null, LootLogic.EndTime(1000, 0, 1060), "off");
+        });
         Test("04.11: the animal doesn't heal back to full when it hitches up again", () =>
         {
             var s = new RunState { Started = T0 };

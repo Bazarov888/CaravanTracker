@@ -212,6 +212,9 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   edge: a KindredPortals marker with an icon of the mod's kinds whose character was deleted.
 - New markers' icons are made global as soon as the game creates them (`MapIconSpawnPatch`), each marker once;
   with `GlobalIcons = false` nothing is waited for.
+- Loot containers with loot get the game's removal time (`DestroyAfterDuration.EndTime`) pushed out to
+  `LootKeepMinutes` after they were first seen (`Loot.Keep`, `LootLogic`). The game's own timers, read on 04.11: 60 s,
+  ten times slower with a player within 20 m, and 60 s after something was taken.
 - An object only the full search found is remembered and looked at on every check after that, so it doesn't drop
   out of the list until the next full search.
 

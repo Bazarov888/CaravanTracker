@@ -26,6 +26,11 @@ main() {
   local server="${1:?usage: tools/deploy.sh /path/to/server}"
   local repo keys
   repo="$(cd "$(dirname "$0")/.." && pwd)"
+  # A mistyped server path would make Docker create empty folders there and the build fail with hundreds of errors.
+  if [ ! -d "$server/BepInEx/core" ]; then
+    echo "No BepInEx/core in $server: check the server path." >&2
+    exit 1
+  fi
   keys="$(dirname "$repo")/.carriage-deploy"
   [ -d "$keys" ] || keys="$(dirname "$repo")/.caravan-deploy"
 

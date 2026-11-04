@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Il2CppInterop.Runtime;
 using ProjectM;
 using ProjectM.Network;
+using ProjectM.Scripting;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -283,6 +284,11 @@ static class Tracker
         _lastTick = now;
         if (!paused)
         {
+            try { Loot.Keep(world, em, found); }
+            catch (Exception e) { Plugin.Warn($"CarriageTracker: keeping loot failed: {e.Message}"); }
+        }
+        if (!paused)
+        {
             try { Greeter.Tick(em); }
             catch (Exception e) { Plugin.Warn($"CarriageTracker: welcome failed: {e.Message}"); }
         }
@@ -334,5 +340,40 @@ static class Tracker
             string routeNow = route == null ? "" : $"; route now {route.Move}, units {route.Units}, stop {route.Stops?.Log}";
             Plugin.Info($"CarriageTracker: caravan {c.Route} gone at ({Math.Round(c.Pos.x)}, {Math.Round(c.Pos.z)}): was {c.State}, {GoneLogic.Text(why)}{routeNow}");
         }
+    }
+}
+
+// Loot containers of robbed carriages stay LootKeepMinutes (LootLogic). Every check: each container with loot
+// gets its removal time pushed out to LootKeepMinutes after it was first seen.
+static class Loot
+{
+    static readonly Dictionary<(int, int), double> FirstSeen = new();
+    static readonly HashSet<(int, int)> Logged = new();
+
+    public static void Keep(World world, EntityManager em, List<Caravans.Found> found)
+    {
+        double keep = Math.Max(0, Settings.LootKeepMinutes.Value) * 60.0;
+        var mapper = world.GetExistingSystemManaged<ServerScriptMapper>();
+        if (keep <= 0 || mapper == null) return;
+        double now = mapper.GetServerGameManager().ServerTime;
+        var seen = new HashSet<(int, int)>();
+        foreach (var f in found)
+        {
+            if (f.Kind != Kind.Container || f.Empty || !Caravans.OnMap(f.Pos)) continue;
+            var key = (f.Entity.Index, f.Entity.Version);
+            seen.Add(key);
+            if (!FirstSeen.TryGetValue(key, out double first)) FirstSeen[key] = first = now;
+            if (!Caravans.Has<DestroyAfterDuration>(em, f.Entity)) continue;
+            var timer = em.GetComponentData<DestroyAfterDuration>(f.Entity);
+            if (LootLogic.EndTime(first, keep, timer.EndTime) is not double until) continue;
+            double gameEnd = timer.EndTime;
+            timer.EndTime = until;
+            em.SetComponentData(f.Entity, timer);
+            if (Logged.Add(key))
+                Plugin.Info($"CarriageTracker: loot of {f.Route} at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}) kept " +
+                            $"{Math.Round((until - now) / 60, 1)} more min (the game would remove it in {Math.Round(Math.Max(0, gameEnd - now))} s)");
+        }
+        foreach (var key in new List<(int, int)>(FirstSeen.Keys))
+            if (!seen.Contains(key)) { FirstSeen.Remove(key); Logged.Remove(key); }
     }
 }
