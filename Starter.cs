@@ -33,6 +33,7 @@ static partial class Starter
         public readonly Dictionary<string, object> Saved = new();    // the route's own spawner values
         public readonly HashSet<(int, int)> Awake = new();           // units and carts the mod keeps from freezing
         public readonly HashSet<(int, int)> BuffsRemoved = new();    // units whose leftover spawn buff was removed
+        public int AnimalHeals;                                        // heals of the animal undone (AnimalKeepsDamage)
         public string LastState = "";
         public int Blocked;
         public int OverLimit;
@@ -468,6 +469,7 @@ static partial class Starter
             LogAnimal(em, prefabs, run, remaining, "after its cart was lost");
         }
         if (s.CartGone) MakeAnimalMortal(em, prefabs, run, remaining);
+        if (Settings.AnimalKeepsDamage.Value) KeepAnimalDamage(em, prefabs, run, remaining);
 
         // State changes go to the verbose log (movement flickers between Moving and Stopped, it isn't compared).
         var sp = em.GetComponentData<UnitCompositionSpawner>(run.Patrol);

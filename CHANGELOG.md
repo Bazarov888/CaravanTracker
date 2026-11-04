@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.14
+
+- The animal of a carriage started by the mod no longer heals. In a fight it breaks off from its cart, comes back, hitches up again and got full health from the game; now its health is set back to the lowest it had. New setting `Start.AnimalKeepsDamage`, on by default. The log tells each time (the first five per carriage) and whether the animal was hitched to its cart at that moment.
+
 ## 1.0.13
 
 - `.cvdiag comps` also shows the values of the components that remove an object by time (`DestroyAfterDuration` and its kin, `LifeTime`), in chat and in the server log. A loot container vanished about a minute after its cart was destroyed while no player was near (03.11); its timers come next.

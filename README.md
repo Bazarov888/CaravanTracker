@@ -100,6 +100,7 @@ For admins:
 | Start | SpawnTimeoutMinutes | `5` | How long to wait for a started squad to appear |
 | Start | ResetToStart | `true` | A route left mid-way is put back to its first stop before a start |
 | Start | MaxRunMinutes | `90` | How long a started carriage is looked after |
+| Start | AnimalKeepsDamage | `true` | The animal of a started carriage doesn't heal back to full when it hitches up to its cart again |
 | Start | MaxSquadSize | `20` | Safety limit: extra units of a started squad are removed |
 | Timing | CheckSeconds | `30` | How often carriages are searched |
 | Timing | SafetyScanMinutes | `30` | How often the whole world is searched as a safety net |
