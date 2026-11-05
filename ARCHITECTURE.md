@@ -202,7 +202,8 @@ is queued like above; if the whole pass fails it is tried again on the next chec
 - Icons: in `direct` mode the icon entity targets the cart; frozen carts and `proxy` mode use a marker entity
   that follows the caravan. `Icons.Sync` touches only icons the mod could have made: on a caravan, icons of the
   current kind, `OldIcons` or a named preset; off a caravan, only an icon of the current or an `OldIcons` kind
-  whose object is gone. Icons on marker objects (`Attach`), where the game keeps its own icons, are never touched.
+  whose object is gone. Icons on marker objects (`Attach`), where the game keeps its own icons, aren't touched there;
+  only `Proxies.SweepOrphans` removes such an icon of the mod's own kinds whose marker no longer exists.
 - Markers (`Proxies`) are the game's `MapIcon_ProxyObject_POI_Unknown`, which KindredPortals uses too (with
   `SpawnedBy` = a player's character and an icon of the player's choice). `Proxies.Owned` touches a marker only if
   the mod made it since the server start, or if it asks for one icon of the mod's kinds and was spawned by a caravan
@@ -213,8 +214,9 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   mode), 100 m and not before the marker is 3 minutes old for a frozen one. Until 1.0.16 it was 10 m, and markers
   and their icons were destroyed with `EntityManager.DestroyEntity`, past the game's destroy pipeline; on 05.11
   players saw rows of stale carriage icons and the server was killed for memory. Markers and icons now go through
-  `DestroyUtility`, objects handed to it are skipped for 10 s (it is deferred), and at every check icons of the
-  mod's kinds whose marker no longer exists are removed (`Proxies.SweepOrphans`).
+  `DestroyUtility`, objects handed to it are skipped until the game has removed them (it is deferred; one still
+  there a minute later is logged), and at every check icons of the mod's own kinds (current and `OldIcons`) whose
+  marker no longer exists are removed (`Proxies.SweepOrphans`).
 - Every 10 minutes `Memory` writes the process's memory, the game and plugin heaps and the mod's icons and markers
   (how many exist, how many were made and removed) to the log.
 - New markers' icons are made global as soon as the game creates them (`MapIconSpawnPatch`), each marker once;
