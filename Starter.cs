@@ -46,6 +46,7 @@ static partial class Starter
     static readonly string[] TimingFields = { "RespawnTimeModifier", "MinRespawnTime", "MaxRespawnTime" };
 
     public static bool Any => Runs.Count > 0;
+    internal static int RunCount => Runs.Count;
     public static bool IsRunning(Entity patrol) => Runs.Exists(r => r.Patrol == patrol);
 
     // A route whose start failed (no squad appeared, or a woken route didn't go back to its first stop) is skipped

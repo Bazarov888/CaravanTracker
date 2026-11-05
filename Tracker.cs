@@ -412,3 +412,39 @@ static class Loot
         }
     }
 }
+
+// Once every 10 minutes a line with the server process's memory and what the mod holds: the server was killed for
+// memory on 05.11 (6.3 GB limit). If the process grows while the mod's objects stay level, the growth isn't the
+// mod's; if markers or icons pile up, they are. Called every frame from Ticker, so it runs even if checks fail.
+// icons: map icons of the mod's kinds as found at the last check (with Icon = merchant that includes the game's own
+// merchant icons); markers: all MapIcon_ProxyObject_POI_Unknown markers (KindredPortals' included), of them the mod's.
+static class Memory
+{
+    static readonly TimeSpan Every = TimeSpan.FromMinutes(10);
+    static DateTime _next = DateTime.UtcNow.AddMinutes(10);
+    static long _iconsMade, _iconsDropped, _markersMade, _markersDropped, _orphans;
+
+    public static void Tick()
+    {
+        var now = DateTime.UtcNow;
+        if (now < _next) return;
+        _next = now + Every;
+        string process;
+        try
+        {
+            using var p = System.Diagnostics.Process.GetCurrentProcess();
+            process = $"process {p.PrivateMemorySize64 >> 20} MB private, {p.WorkingSet64 >> 20} MB in RAM";
+        }
+        catch (Exception e) { process = $"process memory unknown ({e.GetType().Name})"; }
+        string game;
+        try { game = $"{Il2CppSystem.GC.GetTotalMemory(false) >> 20} MB"; }
+        catch (Exception e) { game = $"unknown ({e.GetType().Name})"; }
+        Plugin.Info($"CarriageTracker memory: {process}; game heap {game}, plugins' .NET heap {GC.GetTotalMemory(false) >> 20} MB; " +
+                    $"mod: caravans {Tracker.Current.Count}, starts {Starter.RunCount}; " +
+                    $"icons on caravans {Icons.Live} of {Icons.InWorld} of these kinds (made {Icons.Made - _iconsMade}, removed {Icons.Dropped - _iconsDropped}); " +
+                    $"markers {Proxies.Live} of {Proxies.InWorld} (made {Proxies.Made - _markersMade}, removed {Proxies.Dropped - _markersDropped}, " +
+                    $"stale icons removed {Proxies.Orphans - _orphans}) since the last line");
+        _iconsMade = Icons.Made; _iconsDropped = Icons.Dropped;
+        _markersMade = Proxies.Made; _markersDropped = Proxies.Dropped; _orphans = Proxies.Orphans;
+    }
+}
