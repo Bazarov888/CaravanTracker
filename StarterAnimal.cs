@@ -67,38 +67,6 @@ static partial class Starter
         }
     }
 
-    const int CarriageConnectBuff = 1084521444; // Buff_CarriageHorse_Connect: the animal pulls its cart
-
-    static bool Hitched(EntityManager em, Entity animal)
-    {
-        if (!em.HasBuffer<BuffBuffer>(animal)) return false;
-        var buffs = em.GetBuffer<BuffBuffer>(animal);
-        for (int i = 0; i < buffs.Length; i++)
-            if (buffs[i].PrefabGuid.GuidHash == CarriageConnectBuff) return true;
-        return false;
-    }
-
-    // Once a second: the animal's health may only go down (RunLogic.AnimalHealth, setting AnimalKeepsDamage).
-    // A heal of 5% of its health or more at once is written to the log (the first five of a run), with whether the
-    // animal was hitched to its cart then; smaller ones (its regeneration, about 1 point a second, 04.11) are counted
-    // and told when the run finishes.
-    static void KeepAnimalDamage(EntityManager em, PrefabCollectionSystem prefabs, Run run, List<Entity> units)
-    {
-        var animal = AnimalOf(em, prefabs, units);
-        if (animal == Entity.Null || !Caravans.Has<Health>(em, animal)) return;
-        var health = em.GetComponentData<Health>(animal);
-        var back = RunLogic.AnimalHealth(run.State, Key(animal), health.Value);
-        if (back is not float lowest) return;
-        float was = health.Value;
-        health.Value = lowest;
-        em.SetComponentData(animal, health);
-        float max = health.MaxHealth._Value;
-        if (was - lowest < 0.05f * max) { run.AnimalRegen++; return; }
-        if (++run.AnimalHeals <= 5)
-            Plugin.Info($"CarriageTracker start: {Id(run)}: the animal healed from {Math.Round(lowest)} to {Math.Round(was)} " +
-                        $"of {Math.Round(max)} at once (hitched to its cart: {Hitched(em, animal)}); set back to {Math.Round(lowest)}");
-    }
-
     static void LogAnimal(EntityManager em, PrefabCollectionSystem prefabs, Run run, List<Entity> units, string when)
     {
         var animal = AnimalOf(em, prefabs, units);

@@ -345,35 +345,70 @@ static class Tracker
 
 // Loot containers of robbed carriages stay LootKeepMinutes (LootLogic). Every check: each container with loot
 // gets its removal time pushed out to LootKeepMinutes after it was first seen.
+// Every container on the map is written to the log when it appears and when it is gone, empty ones too: on 05.11 a
+// robbed carriage left no line about its container at all, and it wasn't clear whether there was one.
 static class Loot
 {
-    static readonly Dictionary<(int, int), double> FirstSeen = new();
-    static readonly HashSet<(int, int)> Logged = new();
+    sealed class Seen
+    {
+        public double First;
+        public string Route;
+        public float3 Pos;
+        public bool Empty;
+    }
+
+    static readonly Dictionary<(int, int), Seen> Containers = new();
+    static readonly HashSet<(int, int)> Kept = new();
+    static bool _noClockLogged;
+
+    static string At(float3 p) => $"({Math.Round(p.x)}, {Math.Round(p.z)})";
 
     public static void Keep(World world, EntityManager em, List<Caravans.Found> found)
     {
         double keep = Math.Max(0, Settings.LootKeepMinutes.Value) * 60.0;
         var mapper = world.GetExistingSystemManaged<ServerScriptMapper>();
-        if (keep <= 0 || mapper == null) return;
+        if (mapper == null)
+        {
+            if (!_noClockLogged) Plugin.Warn("CarriageTracker: no ServerScriptMapper, loot containers are left to the game");
+            _noClockLogged = true;
+            return;
+        }
         double now = mapper.GetServerGameManager().ServerTime;
         var seen = new HashSet<(int, int)>();
         foreach (var f in found)
         {
-            if (f.Kind != Kind.Container || f.Empty || !Caravans.OnMap(f.Pos)) continue;
+            if (f.Kind != Kind.Container || !Caravans.OnMap(f.Pos)) continue;
             var key = (f.Entity.Index, f.Entity.Version);
             seen.Add(key);
-            if (!FirstSeen.TryGetValue(key, out double first)) FirstSeen[key] = first = now;
-            if (!Caravans.Has<DestroyAfterDuration>(em, f.Entity)) continue;
-            var timer = em.GetComponentData<DestroyAfterDuration>(f.Entity);
-            if (LootLogic.EndTime(first, keep, timer.EndTime) is not double until) continue;
+            bool hasTimer = Caravans.Has<DestroyAfterDuration>(em, f.Entity);
+            var timer = hasTimer ? em.GetComponentData<DestroyAfterDuration>(f.Entity) : default;
+            if (!Containers.TryGetValue(key, out var c))
+            {
+                Containers[key] = c = new Seen { First = now, Route = f.Route, Pos = f.Pos, Empty = f.Empty };
+                Plugin.Info($"CarriageTracker: loot container of {f.Route} appeared at {At(f.Pos)}, {(f.Empty ? "empty" : "with loot")}; " +
+                            (hasTimer ? $"the game would remove it in {Math.Round(Math.Max(0, timer.EndTime - now))} s" : "no removal timer"));
+            }
+            if (f.Empty && !c.Empty)
+                Plugin.Info($"CarriageTracker: loot container of {f.Route} at {At(f.Pos)} emptied after {Math.Round(now - c.First)} s");
+            c.Empty = f.Empty;
+            c.Pos = f.Pos;
+            if (f.Empty || keep <= 0 || !hasTimer) continue;
+            if (LootLogic.EndTime(c.First, keep, timer.EndTime) is not double until) continue;
             double gameEnd = timer.EndTime;
             timer.EndTime = until;
             em.SetComponentData(f.Entity, timer);
-            if (Logged.Add(key))
-                Plugin.Info($"CarriageTracker: loot of {f.Route} at ({Math.Round(f.Pos.x)}, {Math.Round(f.Pos.z)}) kept " +
+            if (Kept.Add(key))
+                Plugin.Info($"CarriageTracker: loot of {f.Route} at {At(f.Pos)} kept " +
                             $"{Math.Round((until - now) / 60, 1)} more min (the game would remove it in {Math.Round(Math.Max(0, gameEnd - now))} s)");
         }
-        foreach (var key in new List<(int, int)>(FirstSeen.Keys))
-            if (!seen.Contains(key)) { FirstSeen.Remove(key); Logged.Remove(key); }
+        foreach (var key in new List<(int, int)>(Containers.Keys))
+        {
+            if (seen.Contains(key)) continue;
+            var c = Containers[key];
+            Plugin.Info($"CarriageTracker: loot container of {c.Route} at {At(c.Pos)} gone after {Math.Round(now - c.First)} s, " +
+                        (c.Empty ? "empty" : "still with loot"));
+            Containers.Remove(key);
+            Kept.Remove(key);
+        }
     }
 }

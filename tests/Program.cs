@@ -289,18 +289,6 @@ static class Program
             Eq((double?)null, LootLogic.EndTime(1000, 600, 1700), "the game's own is later");
             Eq((double?)null, LootLogic.EndTime(1000, 0, 1060), "off");
         });
-        Test("04.11: the animal doesn't heal back to full when it hitches up again", () =>
-        {
-            var s = new RunState { Started = T0 };
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(1), 4000), "first look");
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(1), 2500), "damaged");
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(1), 1200), "broke off at 1200");
-            Eq((float?)1200f, RunLogic.AnimalHealth(s, U(1), 4000), "hitched up with full health: back to 1200");
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(1), 1200.5f), "rounding");
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(1), 900), "more damage");
-            Eq((float?)900f, RunLogic.AnimalHealth(s, U(1), 950), "any heal is undone");
-            Eq((float?)null, RunLogic.AnimalHealth(s, U(2), 4000), "another animal starts anew");
-        });
         Test("02.11: a spawn buff is a leftover 10 s after the unit appeared", () =>
         {
             var s = new RunState { Started = T0 };
