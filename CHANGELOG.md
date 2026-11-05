@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.17
+
+- Map markers of the mod (the icons of frozen carriages, and of all carriages with `Mode = proxy`) are removed through the game's own destroy pipeline (`DestroyUtility`), as units and carts already were. Until now they were destroyed with `EntityManager.DestroyEntity`, which bypasses the game's network bookkeeping of these networked objects, and a frozen carriage gets a new marker whenever its route moves 10 m. On 05.11 the server was killed for memory (6.3 GB limit); this is the one place in the mod that could leak with time.
+- Once every 10 minutes the log has a line `CarriageTracker memory:` with the server process's memory, the .NET heap of all plugins and the mod's map icons and markers: how many there are and how many were made and removed since the previous line. It shows whether memory grows with the mod's work or apart from it.
+
 ## 1.0.16
 
 - Removed the setting `Start.AnimalKeepsDamage` (1.0.14) and its code. The game heals the animal to full every second while it is hitched to its cart, the mod set it back once a second, and in game its health bar jumped up and down all the time, which looked like a bug. The animal now heals as in the game. The spawn buff fix of 1.0.11 stays: the animal takes damage. The line `AnimalKeepsDamage` left in an existing config file does nothing.

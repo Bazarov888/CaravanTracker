@@ -4,6 +4,7 @@ using HarmonyLib;
 using Il2CppInterop.Runtime;
 using ProjectM;
 using ProjectM.Network;
+using ProjectM.Shared;
 using Stunlock.Core;
 using Unity.Collections;
 using Unity.Entities;
@@ -14,6 +15,10 @@ namespace CarriageTracker;
 
 static class Icons
 {
+    // Since the server start, for the memory line (Tracker.Memory).
+    internal static long Made, Dropped;
+    internal static int Live;
+
     // Icons the mod treats as its own: the current one and all used before.
     public static HashSet<int> Ours()
     {
@@ -88,6 +93,7 @@ static class Icons
                 }
                 StatChangeUtility.KillOrDestroyEntity(em, icon, icon, Entity.Null, 0, StatChangeReason.Any, true);
                 removed++;
+                Dropped++;
             }
         }
         finally
@@ -113,7 +119,9 @@ static class Icons
             Unrestrict(em, icon);
             if (MakeGlobal(em, icon)) globalized++;
             created++;
+            Made++;
         }
+        Live = covered.Count + created;
         return (created, removed, globalized);
     }
 }
@@ -135,6 +143,10 @@ static class Proxies
     static readonly HashSet<(int, int)> Created = new();
     static readonly HashSet<(int, int)> Pending = new();
     static DateTime _pendingUntil;
+
+    // Since the server start, for the memory line (Tracker.Memory).
+    internal static long Made, Dropped;
+    internal static int Live;
 
     internal static bool HasPending => Pending.Count > 0;
 
@@ -212,13 +224,18 @@ static class Proxies
     }
 
     // Destroys a marker together with its icons. Returns the number of removed icons.
+    // Through the game's own destroy pipeline (DestroyUtility), as the mod removes units and carts: markers are
+    // networked objects, and the game says itself (server log 05.11) that objects must be destroyed only there.
+    // EntityManager.DestroyEntity, used until 1.0.16, bypasses it, so the game's network bookkeeping of the object
+    // may never be freed, and frozen caravans get a new marker whenever their route moves 10 m.
     static int Destroy(EntityManager em, Entity p)
     {
         var attached = Attached(em, p);
-        foreach (var e in attached) em.DestroyEntity(e);
+        foreach (var e in attached) DestroyUtility.Destroy(em, e);
         Created.Remove(Key(p));
         Pending.Remove(Key(p));
-        em.DestroyEntity(p);
+        DestroyUtility.Destroy(em, p);
+        Dropped++;
         return attached.Count;
     }
 
@@ -280,7 +297,7 @@ static class Proxies
             var proxy = em.Instantiate(proxyPrefab);
             if (!em.HasBuffer<AttachMapIconsToEntity>(proxy))
             {
-                em.DestroyEntity(proxy);
+                DestroyUtility.Destroy(em, proxy);
                 Plugin.Warn("CarriageTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
                 break;
             }
@@ -295,7 +312,9 @@ static class Proxies
             Created.Add(Key(proxy));
             if (Settings.GlobalIcons.Value) Pending.Add(Key(proxy));
             created++;
+            Made++;
         }
+        Live = covered.Count + created;
         if (created > 0 && Settings.GlobalIcons.Value) _pendingUntil = DateTime.UtcNow.AddSeconds(10);
         return (created, removed, globalized);
     }

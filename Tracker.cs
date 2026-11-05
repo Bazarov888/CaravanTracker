@@ -318,6 +318,7 @@ static class Tracker
                      L.T("stats.icons", created, removed) +
                      (globalized > 0 ? L.T("stats.globalized", globalized) : "") + "." +
                      (_lastSafetyMs >= 0 ? " " + L.T("stats.safety", Math.Round((now - _lastSafetyAt).TotalMinutes), _lastMissed) : "");
+        Memory.Tick(_caravans.Count);
         if (created > 0 || removed > 0 || globalized > 0)
             Plugin.Trace($"CarriageTracker: check {ms} ms (fast {fastMs} ms over {scanned}), caravans {_caravans.Count}, " +
                                   $"empty containers {empty}, icons added {created}, removed {removed}, made global {globalized}");
@@ -410,5 +411,35 @@ static class Loot
             Containers.Remove(key);
             Kept.Remove(key);
         }
+    }
+}
+
+// Once every 10 minutes a line with the server process's memory and what the mod holds: the server was killed for
+// memory on 05.11 (6.3 GB limit). If the process grows while the mod's objects stay level, the growth isn't the
+// mod's; if markers or icons are made at a steady rate, that is the mod's churn.
+static class Memory
+{
+    static readonly TimeSpan Every = TimeSpan.FromMinutes(10);
+    static DateTime _next = DateTime.MinValue;
+    static long _iconsMade, _iconsDropped, _markersMade, _markersDropped;
+
+    public static void Tick(int caravans)
+    {
+        var now = DateTime.UtcNow;
+        if (now < _next) return;
+        _next = now + Every;
+        string process;
+        try
+        {
+            using var p = System.Diagnostics.Process.GetCurrentProcess();
+            process = $"process {p.PrivateMemorySize64 >> 20} MB private, {p.WorkingSet64 >> 20} MB in RAM";
+        }
+        catch (Exception e) { process = $"process memory unknown ({e.GetType().Name})"; }
+        Plugin.Info($"CarriageTracker memory: {process}, .NET heap of all plugins {GC.GetTotalMemory(false) >> 20} MB; " +
+                    $"mod: caravans {caravans}, icons {Icons.Live} (made {Icons.Made - _iconsMade}, removed {Icons.Dropped - _iconsDropped} since the last line), " +
+                    $"markers {Proxies.Live} (made {Proxies.Made - _markersMade}, removed {Proxies.Dropped - _markersDropped}), " +
+                    $"starts {Starter.RunCount}");
+        _iconsMade = Icons.Made; _iconsDropped = Icons.Dropped;
+        _markersMade = Proxies.Made; _markersDropped = Proxies.Dropped;
     }
 }
