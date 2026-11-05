@@ -209,6 +209,14 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   object or by something that no longer exists (after a restart; the session list isn't saved and entity numbers
   change). Until 1.0.10 every such marker not on a wanted caravan was removed (audit of 02.11). Left as a known
   edge: a KindredPortals marker with an icon of the mod's kinds whose character was deleted.
+- A marker is made anew where its caravan is when the caravan has moved away: 30 m for a moving caravan (`proxy`
+  mode), 100 m and not before the marker is 3 minutes old for a frozen one. Until 1.0.16 it was 10 m, and markers
+  and their icons were destroyed with `EntityManager.DestroyEntity`, past the game's destroy pipeline; on 05.11
+  players saw rows of stale carriage icons and the server was killed for memory. Markers and icons now go through
+  `DestroyUtility`, objects handed to it are skipped for 10 s (it is deferred), and at every check icons of the
+  mod's kinds whose marker no longer exists are removed (`Proxies.SweepOrphans`).
+- Every 10 minutes `Memory` writes the process's memory, the game and plugin heaps and the mod's icons and markers
+  (how many exist, how many were made and removed) to the log.
 - New markers' icons are made global as soon as the game creates them (`MapIconSpawnPatch`), each marker once;
   with `GlobalIcons = false` nothing is waited for.
 - Loot containers with loot get the game's removal time (`DestroyAfterDuration.EndTime`) pushed out to

@@ -2,8 +2,13 @@
 
 ## 1.0.17
 
-- Map markers of the mod (the icons of frozen carriages, and of all carriages with `Mode = proxy`) are removed through the game's own destroy pipeline (`DestroyUtility`), as units and carts already were. Until now they were destroyed with `EntityManager.DestroyEntity`, which bypasses the game's network bookkeeping of these networked objects, and a frozen carriage gets a new marker whenever its route moves 10 m. On 05.11 the server was killed for memory (6.3 GB limit); this is the one place in the mod that could leak with time.
-- Once every 10 minutes the log has a line `CarriageTracker memory:` with the server process's memory, the .NET heap of all plugins and the mod's map icons and markers: how many there are and how many were made and removed since the previous line. It shows whether memory grows with the mod's work or apart from it.
+- Fixed rows of stale carriage icons on the map and a memory leak behind them. The icon of a frozen carriage hangs on a separate map marker, which the mod made anew whenever the carriage's route had moved 10 m, so almost at every check. The old markers and their icons were destroyed with `EntityManager.DestroyEntity`, past the game's destroy pipeline: players kept seeing the old icons, and the game's records of these networked objects stayed in the server's memory. On 05.11 the server was killed for memory (6.3 GB limit). Now:
+  - markers and their icons are destroyed through the game's `DestroyUtility`, as units and carts already were;
+  - a frozen carriage's marker is made anew only after 100 m and at most every 3 minutes (a moving one's in `Mode = proxy` after 30 m);
+  - at every check, icons of the mod's kinds left on a marker that no longer exists are removed, also those left by earlier versions;
+  - a marker whose icon request the game has emptied is still recognised as the mod's after a restart.
+- Once every 10 minutes the log has a line `CarriageTracker memory:` with the server process's memory, the game's and the plugins' heaps, and the mod's icons and markers: how many exist and how many were made and removed since the previous line. It shows whether memory grows with the mod's work or apart from it.
+- Reviewed for other leaks (every query and native array, static collections, event entities, per-frame code): none found.
 
 ## 1.0.16
 

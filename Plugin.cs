@@ -135,6 +135,8 @@ public class Ticker : UnityEngine.MonoBehaviour
             }
             catch (Exception e) { Plugin.Error($"CarriageTracker start: {e}"); }
         }
+        try { Memory.Tick(); }
+        catch (Exception e) { Plugin.Error($"CarriageTracker memory: {e}"); }
         var now = DateTime.UtcNow;
         if (now >= _next)
         {

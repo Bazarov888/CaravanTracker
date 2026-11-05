@@ -17,7 +17,7 @@ static class Icons
 {
     // Since the server start, for the memory line (Tracker.Memory).
     internal static long Made, Dropped;
-    internal static int Live;
+    internal static int Live, InWorld;
 
     // Icons the mod treats as its own: the current one and all used before.
     public static HashSet<int> Ours()
@@ -69,7 +69,7 @@ static class Icons
         // whose object has vanished is removed. Icons on marker objects (they have Attach) are never touched:
         // the game's own merchant icons hang on such markers.
         var covered = new HashSet<(int, int)>();
-        int removed = 0, globalized = 0;
+        int removed = 0, globalized = 0, inWorld = 0;
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<MapIconTargetEntity>()))
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<PrefabGUID>()));
@@ -81,6 +81,7 @@ static class Icons
             foreach (var icon in icons)
             {
                 int pg = em.GetComponentData<PrefabGUID>(icon).GuidHash;
+                if (mine.Contains(pg)) inWorld++;
                 var t = em.GetComponentData<MapIconTargetEntity>(icon).TargetEntity.GetEntityOnServer();
                 bool exists = em.Exists(t);
                 bool caravanTarget = exists && Caravans.IsCaravanEntity(em, prefabs, t);
@@ -102,6 +103,7 @@ static class Icons
             query.Dispose();
         }
 
+        InWorld = inWorld - removed;
         int created = 0;
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(iconGuid), out Entity iconPrefab))
         {
@@ -122,31 +124,43 @@ static class Icons
             Made++;
         }
         Live = covered.Count + created;
+        InWorld += created;
         return (created, removed, globalized);
     }
 }
 
 // Proxy mode: the icon hangs not on the caravan itself but on a separate map marker object
 // (MapIcon_ProxyObject_POI_Unknown), like KindredPortals does. The game sends such markers to players
-// regardless of distance. The marker is placed at the caravan and recreated when the caravan
-// moves farther than MoveThreshold meters. Also used for frozen caravans in direct mode.
+// regardless of distance. Also used for frozen caravans in direct mode.
+// A marker is put where its caravan is and made anew when the caravan has moved away (MovedFar). Until 1.0.16 that
+// was every 10 m, so a frozen caravan whose route goes on got a new marker at almost every check, and the old ones
+// were destroyed past the game's destroy pipeline. On 05.11 players saw rows of stale carriage icons along a road
+// and the server was killed for memory. Now markers are destroyed through DestroyUtility, a frozen caravan's marker
+// is made anew only after 100 m and at most every 3 minutes, and icons of the mod's kinds left on a marker that no
+// longer exists are removed at every check (SweepOrphans).
 // Other mods make the same markers (KindredPortals: SpawnedBy = a player's character, an icon of the player's
 // choice), so only markers of this mod are touched (Owned).
 static class Proxies
 {
     const int ProxyGuid = 636813227; // MapIcon_ProxyObject_POI_Unknown
-    const float MoveThreshold = 10f;
+    const float MoveMoving = 30f;    // proxy mode: a moving caravan's marker follows it in 30 m steps
+    const float MoveFrozen = 100f;   // a frozen caravan's marker: 100 m steps
+    static readonly TimeSpan FrozenMinAge = TimeSpan.FromMinutes(3);
+    static readonly TimeSpan DyingFor = TimeSpan.FromSeconds(10);
     static (int, int) Key(Entity e) => (e.Index, e.Version);
 
-    // Markers this mod made since the server start, and of them those whose icon the game hasn't made yet
+    // Markers this mod made since the server start (when), and of them those whose icon the game hasn't made yet
     // (it is made global as soon as it appears, see GlobalizeNewIcons).
-    static readonly HashSet<(int, int)> Created = new();
+    static readonly Dictionary<(int, int), DateTime> MadeAt = new();
     static readonly HashSet<(int, int)> Pending = new();
+    // Markers and icons handed to DestroyUtility: the game removes them a frame or more later; until then they are
+    // skipped, so a check right after another one doesn't count or keep them.
+    static readonly Dictionary<(int, int), DateTime> Dying = new();
     static DateTime _pendingUntil;
 
-    // Since the server start, for the memory line (Tracker.Memory).
-    internal static long Made, Dropped;
-    internal static int Live;
+    // For the memory line (Memory): since the server start, and as seen at the last check.
+    internal static long Made, Dropped, Orphans;
+    internal static int Live, InWorld;
 
     internal static bool HasPending => Pending.Count > 0;
 
@@ -158,14 +172,22 @@ static class Proxies
         return buf.Length == 1 && kinds.Contains(buf[0].Prefab.GuidHash);
     }
 
+    // One icon attached, of one of the given kinds (in case the game empties the request once the icon is made).
+    static bool CarriesOneOf(EntityManager em, Entity p, HashSet<int> kinds)
+    {
+        var attached = Attached(em, p);
+        return attached.Count == 1 && Caravans.Has<PrefabGUID>(em, attached[0])
+               && kinds.Contains(em.GetComponentData<PrefabGUID>(attached[0]).GuidHash);
+    }
+
     // A marker of this mod: made by it since the server start; or, after a restart (the list above isn't saved
-    // and entity numbers change), a marker that asks for one icon of the mod's kinds and was spawned by a caravan
+    // and entity numbers change), a marker with one icon of the mod's kinds that was spawned by a caravan
     // object or by something that no longer exists (a caravan gone while the server was off). Until 1.0.10 every
     // such marker not on a wanted caravan was removed, KindredPortals' included (audit 02.11).
     static bool Owned(EntityManager em, PrefabCollectionSystem prefabs, Entity p, HashSet<int> kinds)
     {
-        if (Created.Contains(Key(p))) return true;
-        if (!RequestsOneOf(em, p, kinds)) return false;
+        if (MadeAt.ContainsKey(Key(p))) return true;
+        if (!RequestsOneOf(em, p, kinds) && !CarriesOneOf(em, p, kinds)) return false;
         var t = em.GetComponentData<SpawnedBy>(p).Value;
         return t == Entity.Null || !em.Exists(t) || Caravans.IsCaravanEntity(em, prefabs, t);
     }
@@ -209,7 +231,6 @@ static class Proxies
         if (Caravans.Has<LocalToWorld>(em, e)) em.SetComponentData(e, new LocalToWorld { Value = float4x4.Translate(pos) });
     }
 
-
     static List<Entity> Attached(EntityManager em, Entity p)
     {
         var list = new List<Entity>();
@@ -223,24 +244,68 @@ static class Proxies
         return list;
     }
 
-    // Destroys a marker together with its icons. Returns the number of removed icons.
-    // Through the game's own destroy pipeline (DestroyUtility), as the mod removes units and carts: markers are
-    // networked objects, and the game says itself (server log 05.11) that objects must be destroyed only there.
-    // EntityManager.DestroyEntity, used until 1.0.16, bypasses it, so the game's network bookkeeping of the object
-    // may never be freed, and frozen caravans get a new marker whenever their route moves 10 m.
-    static int Destroy(EntityManager em, Entity p)
+    static bool IsDying(Entity e, DateTime now) => Dying.TryGetValue(Key(e), out var since) && now - since < DyingFor;
+
+    static void Kill(EntityManager em, Entity e, DateTime now)
+    {
+        if (e == Entity.Null || !em.Exists(e) || IsDying(e, now)) return;
+        DestroyUtility.Destroy(em, e);
+        Dying[Key(e)] = now;
+    }
+
+    // Destroys a marker together with its icons, through the game's destroy pipeline (DestroyUtility), as the mod
+    // removes units and carts: markers are networked objects, and the game says itself (server log 05.11) that
+    // objects must be destroyed only there. Returns the number of removed icons.
+    static int Destroy(EntityManager em, Entity p, DateTime now)
     {
         var attached = Attached(em, p);
-        foreach (var e in attached) DestroyUtility.Destroy(em, e);
-        Created.Remove(Key(p));
+        foreach (var e in attached) Kill(em, e, now);
+        MadeAt.Remove(Key(p));
         Pending.Remove(Key(p));
-        DestroyUtility.Destroy(em, p);
+        Kill(em, p, now);
         Dropped++;
         return attached.Count;
     }
 
+    // Icons of the mod's kinds hanging on a marker that no longer exists: left over when a marker was destroyed
+    // without its icons (until 1.0.16, or if the game hadn't filled the marker's list of icons yet). Nothing else
+    // would ever remove them, and with GlobalIcons every player sees them. Icons of other kinds aren't touched.
+    static int SweepOrphans(EntityManager em, HashSet<int> kinds, DateTime now)
+    {
+        int swept = 0;
+        var builder = new EntityQueryBuilder(Allocator.Temp)
+            .AddAll(ComponentType.ReadOnly(Il2CppType.Of<MapIconData>()))
+            .AddAll(ComponentType.ReadOnly(Il2CppType.Of<Attach>()))
+            .AddAll(ComponentType.ReadOnly(Il2CppType.Of<PrefabGUID>()))
+            .WithOptions(EntityQueryOptions.IncludeDisabled);
+        var query = em.CreateEntityQuery(ref builder);
+        builder.Dispose();
+        var icons = query.ToEntityArray(Allocator.Temp);
+        var orphans = new List<Entity>();
+        try
+        {
+            foreach (var icon in icons)
+            {
+                if (!kinds.Contains(em.GetComponentData<PrefabGUID>(icon).GuidHash) || IsDying(icon, now)) continue;
+                var parent = em.GetComponentData<Attach>(icon).Parent;
+                if (parent == Entity.Null || !em.Exists(parent)) orphans.Add(icon);
+            }
+        }
+        finally
+        {
+            icons.Dispose();
+            query.Dispose();
+        }
+        foreach (var icon in orphans) { Kill(em, icon, now); swept++; }
+        Orphans += swept;
+        return swept;
+    }
+
     public static (int Created, int Removed, int Globalized) Sync(EntityManager em, PrefabCollectionSystem prefabs, List<Caravans.Caravan> caravans)
     {
+        var now = DateTime.UtcNow;
+        foreach (var k in new List<(int, int)>(Dying.Keys))
+            if (now - Dying[k] >= DyingFor) Dying.Remove(k);
         int iconGuid = Settings.IconGuid;
         var current = new HashSet<int> { iconGuid };
         var kinds = Icons.Ours();
@@ -249,10 +314,10 @@ static class Proxies
         foreach (var c in caravans) wanted[(c.Target.Index, c.Target.Version)] = c;
         var covered = new HashSet<(int, int)>();
         var drop = new List<Entity>();
-        int created = 0, removed = 0, globalized = 0;
+        int created = 0, removed = 0, globalized = 0, inWorld = 0;
 
         // Our markers (Owned): a marker stays if its caravan is still wanted, the icon is of the current kind and
-        // the caravan hasn't moved away. Others of ours are removed; markers of other mods are left alone.
+        // the caravan hasn't moved far away (MovedFar). Others of ours are removed; markers of other mods are left alone.
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<PrefabGUID>()))
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<SpawnedBy>()))
@@ -265,11 +330,14 @@ static class Proxies
         {
             foreach (var p in proxies)
             {
-                if (em.GetComponentData<PrefabGUID>(p).GuidHash != ProxyGuid || !Owned(em, prefabs, p, kinds)) continue;
+                if (em.GetComponentData<PrefabGUID>(p).GuidHash != ProxyGuid || IsDying(p, now)) continue;
+                inWorld++;
+                if (!Owned(em, prefabs, p, kinds)) continue;
                 var t = em.GetComponentData<SpawnedBy>(p).Value;
                 var key = (t.Index, t.Version);
-                if (em.Exists(t) && wanted.TryGetValue(key, out var c) && RequestsOneOf(em, p, current)
-                    && Caravans.Dist2(Caravans.PositionOf(em, p), c.Pos) < MoveThreshold && covered.Add(key))
+                if (em.Exists(t) && wanted.TryGetValue(key, out var c)
+                    && (RequestsOneOf(em, p, current) || CarriesOneOf(em, p, current))
+                    && !MovedFar(em, p, c, now) && covered.Add(key))
                 {
                     foreach (var icon in Attached(em, p))
                         if (Icons.MakeGlobal(em, icon)) globalized++;
@@ -283,11 +351,14 @@ static class Proxies
             proxies.Dispose();
             query.Dispose();
         }
-        foreach (var p in drop) removed += Destroy(em, p);
+        foreach (var p in drop) removed += Destroy(em, p, now);
+        removed += SweepOrphans(em, kinds, now);
 
         if (!prefabs._PrefabGuidToEntityMap.TryGetValue(new PrefabGUID(ProxyGuid), out Entity proxyPrefab))
         {
             Plugin.Warn($"CarriageTracker: proxy prefab {ProxyGuid} not found, no proxy icons created");
+            Live = covered.Count;
+            InWorld = inWorld - drop.Count;
             return (0, removed, globalized);
         }
         foreach (var kv in wanted)
@@ -297,7 +368,7 @@ static class Proxies
             var proxy = em.Instantiate(proxyPrefab);
             if (!em.HasBuffer<AttachMapIconsToEntity>(proxy))
             {
-                DestroyUtility.Destroy(em, proxy);
+                Kill(em, proxy, now);
                 Plugin.Warn("CarriageTracker: proxy prefab has no AttachMapIconsToEntity, proxy mode can't work");
                 break;
             }
@@ -309,14 +380,26 @@ static class Proxies
             var buf = em.GetBuffer<AttachMapIconsToEntity>(proxy);
             buf.Clear();
             buf.Add(new AttachMapIconsToEntity { Prefab = new PrefabGUID(iconGuid) });
-            Created.Add(Key(proxy));
+            MadeAt[Key(proxy)] = now;
             if (Settings.GlobalIcons.Value) Pending.Add(Key(proxy));
             created++;
             Made++;
         }
+        if (created > 0 && Settings.GlobalIcons.Value) _pendingUntil = now.AddSeconds(10);
         Live = covered.Count + created;
-        if (created > 0 && Settings.GlobalIcons.Value) _pendingUntil = DateTime.UtcNow.AddSeconds(10);
+        InWorld = inWorld - drop.Count + created;
         return (created, removed, globalized);
+    }
+
+    // Whether a marker is to be made anew where its caravan is now: a moving caravan (proxy mode) after 30 m,
+    // a frozen one after 100 m and not before its marker is 3 minutes old (a marker left from before a restart has
+    // no known age and goes by distance).
+    static bool MovedFar(EntityManager em, Entity p, Caravans.Caravan c, DateTime now)
+    {
+        float dist = Caravans.Dist2(Caravans.PositionOf(em, p), c.Pos);
+        if (!c.Frozen) return dist >= MoveMoving;
+        if (dist < MoveFrozen) return false;
+        return !MadeAt.TryGetValue(Key(p), out var made) || now - made >= FrozenMinAge;
     }
 }
 
