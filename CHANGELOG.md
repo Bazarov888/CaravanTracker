@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.18
+
+Follow-up to 1.0.17 after a second independent review (no blocking issues found):
+
+- The sweep of stale icons (icons left on a map marker that no longer exists) removes only the mod's own icon kind: the current `Icon` and `OldIcons`. In 1.0.17 it also took the named presets (merchant, unknown, vblood) that the mod wasn't using.
+- An object the mod handed to the game's destroy pipeline stays skipped until the game has actually removed it (in 1.0.17: for 10 seconds). One the game still hasn't removed a minute later is written to the log once.
+- Comments and ARCHITECTURE.md say where icons on markers are touched (only the sweep), and that in `Mode = proxy` a moving carriage's marker is still made anew at nearly every check, without the leak.
+
 ## 1.0.17
 
 - Fixed rows of stale carriage icons on the map and a memory leak behind them. The icon of a frozen carriage hangs on a separate map marker, which the mod made anew whenever the carriage's route had moved 10 m, so almost at every check. The old markers and their icons were destroyed with `EntityManager.DestroyEntity`, past the game's destroy pipeline: players kept seeing the old icons, and the game's records of these networked objects stayed in the server's memory. On 05.11 the server was killed for memory (6.3 GB limit). Now:
