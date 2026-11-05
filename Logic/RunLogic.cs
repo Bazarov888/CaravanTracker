@@ -21,8 +21,6 @@ public sealed class RunState
     public bool CartGone;
     public DateTime ReadySince;     // waking: when the route was first seen back at its first stop, idle
     public DateTime AtEndSince;     // when the squad was first seen standing at the last stop
-    public (int, int)? Animal;      // the animal whose health is watched (AnimalHealth)
-    public float AnimalLowest = -1; // its lowest health seen, -1 before the first look
     public readonly HashSet<(int, int)> Known = new();   // members of the squad
     public readonly Dictionary<(int, int), DateTime> SeenAt = new();   // when each member first appeared
 }
@@ -132,26 +130,6 @@ public static class RunLogic
         if (!s.Restored && (s.LostAny || now - s.LastGrow >= AssemblyQuiet || now - s.SpawnedAt >= AssemblyMax))
             step.Assembled = true;
         return step;
-    }
-
-    // The caravan's animal must not heal (setting AnimalKeepsDamage). 04.11: an animal that broke off from its cart
-    // in a fight came back, hitched up again and had full health. Its lowest health seen is kept; health above it is
-    // a heal, and the returned value is what to set it back to (null: leave it). Small rises (up to 1 point) are
-    // rounding. A dead animal (0) or another animal (the squad changed) starts anew.
-    public static float? AnimalHealth(RunState s, (int, int) animal, float health)
-    {
-        if (s.Animal != animal || health <= 0)
-        {
-            s.Animal = animal;
-            s.AnimalLowest = health > 0 ? health : -1;
-            return null;
-        }
-        if (s.AnimalLowest < 0 || health < s.AnimalLowest)
-        {
-            s.AnimalLowest = health;
-            return null;
-        }
-        return health > s.AnimalLowest + 1f ? s.AnimalLowest : null;
     }
 
     // A member that appeared at least SpawnBuffMax ago: a spawn buff on it is a leftover. Carts aren't members;

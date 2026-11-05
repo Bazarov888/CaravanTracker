@@ -152,8 +152,6 @@ Then once a second `RunLogic.Squad` and `RunLogic.Outcome` decide, and `UpdateRu
   then `RestoreSpawner` puts the saved spawner values back. A blocked or zero range is restored as the game's (0, 90).
   `RunState.Restored` is set only after the write; until then `RunLogic.Squad` asks for it every second.
 - A spawn buff left on a unit or cart 10 s after it appeared is removed (see Game model).
-- With `AnimalKeepsDamage` the animal's health may only go down (`RunLogic.AnimalHealth`): on 04.11 an animal that
-  broke off from its cart in a fight hitched up again with full health. Health above the lowest seen is set back.
 - Every unit and cart of the squad loses `DisableWhenNoPlayersInRange` and is woken up if the game froze it.
 - Once the cart is lost, an animal the game still holds immortal is made mortal (`StarterAnimal.cs`).
 - The run ends when no unit appeared within `SpawnTimeoutMinutes` (the route is then skipped by auto-start for
@@ -215,7 +213,8 @@ is queued like above; if the whole pass fails it is tried again on the next chec
   with `GlobalIcons = false` nothing is waited for.
 - Loot containers with loot get the game's removal time (`DestroyAfterDuration.EndTime`) pushed out to
   `LootKeepMinutes` after they were first seen (`Loot.Keep`, `LootLogic`). The game's own timers, read on 04.11: 60 s,
-  ten times slower with a player within 20 m, and 60 s after something was taken.
+  ten times slower with a player within 20 m, and 60 s after something was taken. Every container on the map,
+  empty ones too, is written to the log when it appears, when it is emptied and when it is gone.
 - An object only the full search found is remembered and looked at on every check after that, so it doesn't drop
   out of the list until the next full search.
 

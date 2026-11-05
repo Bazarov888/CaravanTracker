@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.16
+
+- Removed the setting `Start.AnimalKeepsDamage` (1.0.14) and its code. The game heals the animal to full every second while it is hitched to its cart, the mod set it back once a second, and in game its health bar jumped up and down all the time, which looked like a bug. The animal now heals as in the game. The spawn buff fix of 1.0.11 stays: the animal takes damage. The line `AnimalKeepsDamage` left in an existing config file does nothing.
+- Every loot container of a carriage on the map is written to the log when it appears (empty or with loot, and when the game would remove it), when it is emptied and when it is gone, with how long it stood. On 05.11 a robbed carriage left no line about its container at all.
+
 ## 1.0.15
 
 - Fixed a doubled carriage. Players attacked a started squad before it had finished coming out, and with the start's zero respawn timers the game sent 126 replacement units in 54 seconds, among them a second animal with its own cart. The mod removed the units but not that cart, so a second cart stood on the road. Now the route gets its own timers back as soon as a member of the squad is killed, and a cart of a removed unit is removed with it.
