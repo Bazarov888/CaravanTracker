@@ -129,13 +129,51 @@ static partial class Starter
         }
     }
 
-    // note: why this route was picked, for the log line (auto-start).
+    // note: why this route was picked, for the log line (auto-start). Returns the reply for the player.
     public static string Start(EntityManager em, Routes.Route route, Entity userEntity, bool auto = false, int act = 0, string note = "")
+    {
+        TryStart(em, route, userEntity, out string text, auto, act, note);
+        return text;
+    }
+
+    // true if the caravan is being started. A start writes into the route step by step (the old squad removed,
+    // spawner range and timers, the freeze tags) and is tracked only from its end (Runs). Until 1.0.18 an error in
+    // between left the route with the start's endless range and zero timers until the server restarted, as
+    // RepairLeftovers runs once after the start (audit of 07.11). Now such a route is queued for repair (back to
+    // normal within 5 seconds, RetryRepairs) and auto-start skips it for an hour (RecentlyFailed).
+    public static bool TryStart(EntityManager em, Routes.Route route, Entity userEntity, out string text,
+                                bool auto = false, int act = 0, string note = "")
     {
         var patrol = route.Patrol;
         string name = Routes.Name(route);
-        if (Paused) return L.T("cleanup.paused");
-        if (IsRunning(patrol)) return L.T("start.already", name);
+        GameCheck.Ensure();
+        if (!GameCheck.StartsOk) { text = L.T("start.broken", GameCheck.Missing); return false; }
+        if (Paused) { text = L.T("cleanup.paused"); return false; }
+        if (IsRunning(patrol)) { text = L.T("start.already", name); return false; }
+        try
+        {
+            text = Begin(em, route, userEntity, auto, act, note);
+            return true;
+        }
+        catch (Exception e)
+        {
+            bool tracked = IsRunning(patrol);
+            if (!tracked)
+            {
+                QueueRepair(patrol, route.Key);
+                FailedAt[Key(patrol)] = DateTime.UtcNow;
+            }
+            Plugin.Error($"CarriageTracker start: route {route.Key} patrol {patrol.Index}:{patrol.Version} failed: {e}" +
+                         (tracked ? "; the start goes on and is tracked" : "; its settings are given back within 5 s, auto-start skips it for an hour"));
+            text = L.T(tracked ? "start.goingon" : "start.failed", name);
+            return tracked;
+        }
+    }
+
+    static string Begin(EntityManager em, Routes.Route route, Entity userEntity, bool auto, int act, string note)
+    {
+        var patrol = route.Patrol;
+        string name = Routes.Name(route);
         var run = new Run { Patrol = patrol, Route = route.Key, User = userEntity, Auto = auto, Act = act };
         run.State.Started = DateTime.UtcNow;
 
@@ -258,7 +296,7 @@ static partial class Starter
         {
             object value = kv.Value;
             if (kv.Key == "PlayerRange" && value is float2 range)
-                value = new float2(range.x, SpawnRange.RestoreY(range.x, range.y));
+                value = new float2(range.x, SpawnRange.RestoreY(range.x, range.y, NormalOf(em, run.Patrol).RangeY));
             if (value != null) SetField(boxed, kv.Key, value);
         }
         ResetField(boxed, "RespawnTime");

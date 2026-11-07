@@ -90,8 +90,14 @@ static class Announcer
 
 static class Chat
 {
+    // Texts that were too long, each written to the log once (at most 50 kept).
+    static readonly HashSet<string> Cut = new();
+
     public static void Send(EntityManager em, User user, string text)
     {
+        text = ChatText.Fit(text, out bool cut);
+        if (cut && Cut.Count < 50 && Cut.Add(text))
+            Plugin.Warn($"CarriageTracker: a chat message was longer than {ChatText.MaxBytes} bytes and was cut: \"{text.Substring(0, Math.Min(60, text.Length))}...\"");
         FixedString512Bytes msg = new(text);
         ServerChatUtils.SendSystemMessageToClient(em, user, ref msg);
     }
@@ -243,6 +249,7 @@ static class Tracker
         // First check after the server start: routes left with start settings by a crash get normal values back.
         // If the pass itself fails it is tried again on the next checks (a single route that fails is queued by
         // RepairLeftovers and retried every 5 seconds).
+        GameCheck.Ensure();
         if (!_repaired && _repairTries < 10)
         {
             _repairTries++;

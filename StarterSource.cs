@@ -33,7 +33,7 @@ static partial class Starter
     // not at the next check, so that the game can't spawn its own caravan there in between.
     static void BlockIfWaiting(EntityManager em, Entity patrol)
     {
-        if (Paused || !Settings.ModOnly || !em.Exists(patrol)) return;
+        if (Paused || !GameCheck.StartsOk || !Settings.ModOnly || !em.Exists(patrol)) return;
         var sp = em.GetComponentData<UnitCompositionSpawner>(patrol);
         if (!SpawnRange.Idle(sp.SpawnerState.ToString())) return;
         if (Caravans.Field(sp, "PlayerRange") is not float2 range) return;
@@ -43,8 +43,11 @@ static partial class Starter
 
     public static int ApplySource(EntityManager em, PrefabCollectionSystem prefabs)
     {
+        GameCheck.Ensure();
         if (Paused) return 0;
-        bool modOnly = Settings.ModOnly;
+        // A game version the mod can't start caravans on (GameCheck) gets every blocked route opened: the game
+        // spawns caravans by itself then.
+        bool modOnly = Settings.ModOnly && GameCheck.StartsOk;
         int blocked = 0, opened = 0;
         foreach (var r in Routes.All(em, prefabs))
         {
@@ -57,7 +60,7 @@ static partial class Starter
                 Plugin.Warn($"CarriageTracker: route {r.Key}: Source = Mod, but the game spawned a caravan on it by itself " +
                                          $"(range {range.x}-{range.y}). The block doesn't work here; switch back with .cv source both and report it.");
             if (modOnly && waiting) BlockedRoutes.Add(key); else BlockedRoutes.Remove(key);
-            if (SpawnRange.SourceTarget(modOnly, waiting, range.x, range.y) is not float y) continue;
+            if (SpawnRange.SourceTarget(modOnly, waiting, range.x, range.y, NormalOf(em, r.Patrol).RangeY) is not float y) continue;
             SetRangeY(em, r.Patrol, sp, range.x, y);
             if (SpawnRange.IsBlocked(range.x, y)) blocked++; else opened++;
         }

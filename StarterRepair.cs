@@ -25,11 +25,57 @@ static partial class Starter
     static bool TimersZero(object boxed) =>
         SpawnRange.TimersZero(Num(Caravans.Field(boxed, "MinRespawnTime")), Num(Caravans.Field(boxed, "MaxRespawnTime")));
 
-    static void NormalTimers(object boxed)
+    // A route's normal spawner values: those of the route's prefab (the patrol's PrefabGUID), as the game made
+    // the route from it. The mod's constants (SpawnRange) only if the prefab can't be read or its values are odd
+    // (SpawnRange.SaneRange, SaneTimers): until 1.0.18 the constants were always written, which after a game update
+    // that changes the normal values would have written old ones back (audit of 07.11). One line per prefab in the
+    // log when its values differ from the constants or can't be used.
+    internal readonly record struct Normal(float RangeY, double Modifier, double MinRespawn, double MaxRespawn, bool FromPrefab);
+
+    static readonly Normal Defaults = new(SpawnRange.NormalY, 1, SpawnRange.NormalMinRespawn, SpawnRange.NormalMaxRespawn, false);
+    static readonly Dictionary<int, Normal> Normals = new();
+
+    internal static Normal NormalOf(EntityManager em, Entity patrol)
     {
-        SetField(boxed, "RespawnTimeModifier", 1);
-        SetField(boxed, "MinRespawnTime", SpawnRange.NormalMinRespawn);
-        SetField(boxed, "MaxRespawnTime", SpawnRange.NormalMaxRespawn);
+        if (!em.Exists(patrol) || !Caravans.Has<PrefabGUID>(em, patrol)) return Defaults;
+        var guid = em.GetComponentData<PrefabGUID>(patrol);
+        if (Normals.TryGetValue(guid.GuidHash, out var known)) return known;
+        var world = Caravans.ServerWorld();
+        var prefabs = world == null ? null : Caravans.Prefabs(world);
+        if (prefabs == null) return Defaults;   // not cached: tried again once the prefabs are there
+        var n = Defaults;
+        string why = "the prefab has no spawner";
+        string name = prefabs._PrefabLookupMap.TryGetName(guid, out string pn) ? pn : guid.GuidHash.ToString();
+        try
+        {
+            if (prefabs._PrefabGuidToEntityMap.TryGetValue(guid, out Entity prefab) && Caravans.Has<UnitCompositionSpawner>(em, prefab))
+            {
+                object b = em.GetComponentData<UnitCompositionSpawner>(prefab);
+                float y = Caravans.Field(b, "PlayerRange") is float2 r ? r.y : float.NaN;
+                double mod = Num(Caravans.Field(b, "RespawnTimeModifier"));
+                double min = Num(Caravans.Field(b, "MinRespawnTime"));
+                double max = Num(Caravans.Field(b, "MaxRespawnTime"));
+                if (SpawnRange.SaneRange(y) && SpawnRange.SaneTimers(min, max) && mod > 0)
+                    n = new Normal(y, mod, min, max, true);
+                else why = $"its values look wrong (range {y}, timers {min}-{max}, modifier {mod})";
+            }
+        }
+        catch (Exception e) { why = $"it can't be read: {e.Message}"; }
+        Normals[guid.GuidHash] = n;
+        if (!n.FromPrefab)
+            Plugin.Warn($"CarriageTracker: route prefab {name}: {why}; the mod's defaults are used as its normal values " +
+                        $"(range {SpawnRange.NormalY} m, respawn {SpawnRange.NormalMinRespawn}-{SpawnRange.NormalMaxRespawn} s)");
+        else if (n.RangeY != SpawnRange.NormalY || n.MinRespawn != SpawnRange.NormalMinRespawn || n.MaxRespawn != SpawnRange.NormalMaxRespawn || n.Modifier != 1)
+            Plugin.Info($"CarriageTracker: route prefab {name}: normal values range {n.RangeY} m, respawn {n.MinRespawn}-{n.MaxRespawn} s, " +
+                        $"modifier {n.Modifier} (not the mod's defaults; the prefab's are used)");
+        return n;
+    }
+
+    static void NormalTimers(object boxed, Normal n)
+    {
+        SetField(boxed, "RespawnTimeModifier", n.Modifier);
+        SetField(boxed, "MinRespawnTime", n.MinRespawn);
+        SetField(boxed, "MaxRespawnTime", n.MaxRespawn);
         ResetField(boxed, "RespawnTime");
     }
 
@@ -100,8 +146,9 @@ static partial class Starter
         bool zeroTimers = TimersZero(boxed);
         bool noTag = tag.HasValue && !em.HasComponent(r.Patrol, tag.Value);
         if (!farRange && !zeroTimers && !noTag) return false;
-        if (farRange) SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.NormalY));
-        if (zeroTimers) NormalTimers(boxed);
+        var normal = NormalOf(em, r.Patrol);
+        if (farRange) SetField(boxed, "PlayerRange", new float2(0f, normal.RangeY));
+        if (zeroTimers) NormalTimers(boxed, normal);
         else ResetField(boxed, "RespawnTime");
         em.SetComponentData(r.Patrol, (UnitCompositionSpawner)boxed);
         AddTag(em, r.Patrol, "DisableWhenNoPlayersInRange");
@@ -127,14 +174,15 @@ static partial class Starter
             var sp = em.GetComponentData<UnitCompositionSpawner>(r.Patrol);
             object boxed = sp;
             bool changed = false;
+            var normal = NormalOf(em, r.Patrol);
             if (Caravans.Field(boxed, "PlayerRange") is float2 range && SpawnRange.CleanupOpens(range.x, range.y))
             {
-                SetField(boxed, "PlayerRange", new float2(0f, SpawnRange.NormalY));
+                SetField(boxed, "PlayerRange", new float2(0f, normal.RangeY));
                 changed = true;
             }
             if (TimersZero(boxed))
             {
-                NormalTimers(boxed);
+                NormalTimers(boxed, normal);
                 changed = true;
             }
             if (changed)

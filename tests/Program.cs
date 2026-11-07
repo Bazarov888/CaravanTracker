@@ -529,6 +529,56 @@ static class Program
             Eq(2UL, Welcome.Greet(seen, new ulong[] { 1, 2, 3 }, true)[0]);
         });
 
+        // --- 1.0.19: a route's normal values come from its prefab (audit 07.11)
+        Test("a route's own normal range is what gets written back", () =>
+        {
+            Eq(120f, SpawnRange.SourceTarget(false, true, 0, SpawnRange.BlockedY, 120f));
+            Eq(120f, SpawnRange.SourceTarget(true, false, 0, 0, 120f));
+            Eq(SpawnRange.BlockedY, SpawnRange.SourceTarget(true, true, 0, 0, 120f));
+            Eq(120f, SpawnRange.RestoreY(0, SpawnRange.BlockedY, 120f));
+            Eq(75f, SpawnRange.RestoreY(0, 75f, 120f));
+        });
+        Test("a prefab's odd values aren't taken for normal ones", () =>
+        {
+            True(SpawnRange.SaneRange(90f), "90 m is a normal range");
+            True(!SpawnRange.SaneRange(0f), "0 is not");
+            True(!SpawnRange.SaneRange(SpawnRange.BlockedY), "blocked is not");
+            True(!SpawnRange.SaneRange(SpawnRange.StartY), "a start range is not");
+            True(!SpawnRange.SaneRange(float.NaN), "NaN is not");
+            True(SpawnRange.SaneTimers(1000, 2700), "the game's timers");
+            True(!SpawnRange.SaneTimers(0, 0), "a start's zero timers");
+            True(!SpawnRange.SaneTimers(2700, 1000), "min above max");
+        });
+
+        // --- 1.0.19: chat messages fit FixedString512Bytes (audit 07.11)
+        Test("a short message is left as it is", () =>
+        {
+            Eq("hello", ChatText.Fit("hello", out bool cut));
+            True(!cut, "not cut");
+        });
+        Test("a long Russian message is cut on a whole letter within 509 bytes", () =>
+        {
+            string text = new string('я', 300);   // 600 bytes
+            string fit = ChatText.Fit(text, out bool cut);
+            True(cut, "cut");
+            Eq(254, fit.Length, "letters kept");
+            True(System.Text.Encoding.UTF8.GetByteCount(fit) <= ChatText.MaxBytes, "fits");
+        });
+        Test("a message is not cut inside a color tag", () =>
+        {
+            string text = new string('a', 500) + "<color=#FFC83C>bb</color>";
+            string fit = ChatText.Fit(text, out bool cut);
+            True(cut, "cut");
+            Eq(new string('a', 500), fit, "the tag cut in two is dropped");
+        });
+        Test("a whole tag before the cut stays", () =>
+        {
+            string text = "<b>" + new string('a', 600);
+            string fit = ChatText.Fit(text, out _);
+            True(fit.StartsWith("<b>"), "tag kept");
+            Eq(ChatText.MaxBytes, System.Text.Encoding.UTF8.GetByteCount(fit), "filled up to the limit");
+        });
+
         Console.WriteLine($"{_passed} passed, {_failed} failed");
         return _failed == 0 ? 0 : 1;
     }

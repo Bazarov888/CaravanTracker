@@ -41,7 +41,8 @@ A change of behaviour starts with a test case.
 | `AutoStart.cs` | Which route to start in which act, and when. |
 | `Starter.cs` | A forced start of one route and looking after it until it ends. |
 | `StarterSource.cs` | `Source = Mod`: keeping the game from spawning caravans by itself. |
-| `StarterRepair.cs` | Giving routes the game's settings back after a crash, and `.cv cleanup`. |
+| `StarterRepair.cs` | Giving routes the game's settings back after a crash, and `.cv cleanup`; each route's normal values (`NormalOf`). |
+| `GameCheck.cs` | Once per server start: are all game fields and types the mod uses by name there. |
 | `StarterAnimal.cs` | The caravan's animal: its state in the log, mortal again once its cart is lost; leftover spawn buffs removed from the squad. |
 | `Acts.cs` | Act of a player (by V Blood drunk or by level, `PlayerAct`) and of a route (by its region, `RouteActs`, or guard level for an unknown route). |
 | `Commands.cs` | Chat commands (VampireCommandFramework). |
@@ -111,6 +112,17 @@ Not verified, treated as assumptions:
   stood at its first stop for 3 s is assumed to avoid it (1.0.10 armed about 4 s after waking every time).
 - Spawner settings changed by the mod are kept in the server save. That is why `RepairLeftovers` runs on the first
   check after the server starts and why `.cv cleanup` exists.
+- The values written back as "normal" (range, respawn timers and modifier) are each route's own, read from the
+  route's prefab (`Starter.NormalOf`, by the patrol's `PrefabGUID`). The constants in `SpawnRange` (90 m,
+  1000-2700 s) are used only when the prefab's values can't be read or look wrong, with a warning per prefab. Until
+  1.0.18 the constants were always written (audit of 07.11).
+- A start writes into the route step by step and is tracked only once it is in `Runs`. An error before that
+  (`Starter.TryStart`) queues the route for repair (back to normal within 5 s) and marks it failed, so auto-start
+  skips it for an hour; auto-start counts a start only when it happened.
+- Fields and types read by name (spawner range and timers, the freeze tags, stop indexes, `PatrolBusStopNode`)
+  are checked once at the first check (`GameCheck`). If one a start can't be undone without is missing, starts,
+  auto-start and `Source = Mod` are off (blocked routes are opened again) with one error in the log; tracking,
+  icons and announcements go on.
 
 ## Timing
 
@@ -125,6 +137,9 @@ only if it is older than 5 s (`Tracker.Fresh`). Admin commands (`.cv refresh`, `
 run a check at once.
 
 All world access is on the main thread. Each step has its own try/catch, so an error in one doesn't stop the others.
+
+Chat messages are cut to 509 bytes of UTF-8 (`ChatText.Fit`, what `FixedString512Bytes` holds), on a whole
+character and not inside a rich text tag; a cut text is logged once.
 
 `Plugin.Unload` (a runtime unload) sets `Ticker.Stopped`, gives the world back what the mod changed the way
 `.cv cleanup` does, destroys the `Ticker` and then removes the commands and the patch.

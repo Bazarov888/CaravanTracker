@@ -131,6 +131,9 @@ static class L
         ["route.state.other"] = "{0}/{1}, units {2}",
 
         ["start.already"] = "Carriage {0} is already being started.",
+        ["start.failed"] = "Carriage {0} couldn't be started: an error, see the server log. The route gets its settings back within 5 seconds.",
+        ["start.goingon"] = "Starting carriage {0}. An error was written to the server log, the start goes on.",
+        ["start.broken"] = "Starting carriages is off on this game version: it lacks {0}. See the server log.",
         ["start.ok"] = "Starting carriage {0}. Removed stuck: units {1}, carts {2}. The squad appears where the route stands ({3}) within a minute, then players get an announcement.",
         ["start.midway"] = " The route stands mid-way, left there by an earlier carriage, so this one sets out from there.",
         ["start.reset"] = " The route stood mid-way ({0}), it was put back to the start.",
@@ -267,6 +270,9 @@ static class L
         ["route.state.other"] = "{0}/{1}, юнитов {2}",
 
         ["start.already"] = "Караван «{0}» уже запускается.",
+        ["start.failed"] = "Караван «{0}» не запустился: ошибка, подробности в логе сервера. Настройки маршрута вернутся в течение 5 секунд.",
+        ["start.goingon"] = "Запускаю караван «{0}». В лог сервера записана ошибка, запуск продолжается.",
+        ["start.broken"] = "Запуск караванов выключен на этой версии игры: в ней нет {0}. Подробности в логе сервера.",
         ["start.ok"] = "Запускаю караван «{0}». Убрано застрявших: юнитов {1}, повозок {2}. Отряд появится там, где стоит маршрут ({3}), в течение минуты, и игрокам придёт анонс.",
         ["start.midway"] = " Маршрут стоит посреди пути: там его оставил прошлый караван, и этот поедет оттуда.",
         ["start.reset"] = " Маршрут стоял посреди пути ({0}), мод вернул его в начало.",

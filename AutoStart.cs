@@ -87,6 +87,12 @@ static class AutoStart
             results.Add((false, L.T("auto.gameonly")));
             return results;
         }
+        GameCheck.Ensure();
+        if (!GameCheck.StartsOk)
+        {
+            results.Add((false, L.T("start.broken", GameCheck.Missing)));
+            return results;
+        }
         var online = Acts.Online(em, prefabs);
         if (online.Count == 0)
         {
@@ -161,8 +167,14 @@ static class AutoStart
             int chosen = RouteLogic.Choose(snaps, Settings.ResetToStart.Value, Settings.RotatePick,
                                            id => LastRouteStart.TryGetValue(id, out var t) ? t : DateTime.MinValue, Rng);
             var pick = free[chosen];
-            Starter.Start(em, pick, Entity.Null, true, act,
-                          $", picked from {free.Count} free: {RouteLogic.Groups(snaps)}, this one {RouteLogic.Group(snaps[chosen])}");
+            // A start that didn't happen (an error, the route already started) doesn't count as this act's start:
+            // the next check tries again, and a route whose start failed is skipped for an hour (RecentlyFailed).
+            if (!Starter.TryStart(em, pick, Entity.Null, out string why, true, act,
+                                  $", picked from {free.Count} free: {RouteLogic.Groups(snaps)}, this one {RouteLogic.Group(snaps[chosen])}"))
+            {
+                results.Add((false, why));
+                continue;
+            }
             var stops = Routes.StopsOf(em, pick.Patrol);
             LastStart[act] = now;
             LastRouteStart[snaps[chosen].Ident] = now;

@@ -69,6 +69,9 @@ static class Icons
         // whose object has vanished is removed. Icons on marker objects (they have Attach) are never touched here:
         // the game's own merchant icons hang on such markers (stale icons on markers that are gone: Proxies.SweepOrphans).
         var covered = new HashSet<(int, int)>();
+        var drop = new List<Entity>();
+        var now = DateTime.UtcNow;
+        Doomed.Prune(em, prefabs, now);
         int removed = 0, globalized = 0, inWorld = 0;
         var builder = new EntityQueryBuilder(Allocator.Temp)
             .AddAll(ComponentType.ReadOnly(Il2CppType.Of<MapIconTargetEntity>()))
@@ -80,6 +83,7 @@ static class Icons
         {
             foreach (var icon in icons)
             {
+                if (Doomed.IsDying(icon)) continue;
                 int pg = em.GetComponentData<PrefabGUID>(icon).GuidHash;
                 if (mine.Contains(pg)) inWorld++;
                 var t = em.GetComponentData<MapIconTargetEntity>(icon).TargetEntity.GetEntityOnServer();
@@ -92,9 +96,7 @@ static class Icons
                     if (MakeGlobal(em, icon)) globalized++;
                     continue;
                 }
-                StatChangeUtility.KillOrDestroyEntity(em, icon, icon, Entity.Null, 0, StatChangeReason.Any, true);
-                removed++;
-                Dropped++;
+                drop.Add(icon);
             }
         }
         finally
@@ -102,6 +104,9 @@ static class Icons
             icons.Dispose();
             query.Dispose();
         }
+        foreach (var icon in drop) Doomed.Kill(em, icon, now);
+        removed = drop.Count;
+        Dropped += removed;
 
         InWorld = inWorld - removed;
         int created = 0;
@@ -146,17 +151,12 @@ static class Proxies
     const float MoveMoving = 30f;    // proxy mode: a moving caravan's marker follows it in 30 m steps
     const float MoveFrozen = 100f;   // a frozen caravan's marker: 100 m steps
     static readonly TimeSpan FrozenMinAge = TimeSpan.FromMinutes(3);
-    static readonly TimeSpan DyingWarn = TimeSpan.FromMinutes(1);
     static (int, int) Key(Entity e) => (e.Index, e.Version);
 
     // Markers this mod made since the server start (when), and of them those whose icon the game hasn't made yet
     // (it is made global as soon as it appears, see GlobalizeNewIcons).
     static readonly Dictionary<(int, int), DateTime> MadeAt = new();
     static readonly HashSet<(int, int)> Pending = new();
-    // Markers and icons handed to DestroyUtility: the game removes them a frame or more later; until then they are
-    // skipped, so a check right after another one doesn't count or keep them. One the game still hasn't removed a
-    // minute later is written to the log once (and stays skipped, so it isn't destroyed again and again).
-    static readonly Dictionary<(int, int), (Entity E, DateTime Since, bool Warned)> Dying = new();
     static DateTime _pendingUntil;
 
     // For the memory line (Memory): since the server start, and as seen at the last check.
@@ -245,28 +245,8 @@ static class Proxies
         return list;
     }
 
-    static bool IsDying(Entity e) => Dying.ContainsKey(Key(e));
-
-    // Forgets objects the game has removed; tells about one it hasn't removed for a minute.
-    static void PruneDying(EntityManager em, PrefabCollectionSystem prefabs, DateTime now)
-    {
-        foreach (var k in new List<(int, int)>(Dying.Keys))
-        {
-            var d = Dying[k];
-            if (!em.Exists(d.E)) { Dying.Remove(k); continue; }
-            if (d.Warned || now - d.Since < DyingWarn) continue;
-            string what = Caravans.Has<PrefabGUID>(em, d.E) && prefabs._PrefabLookupMap.TryGetName(em.GetComponentData<PrefabGUID>(d.E), out string n) ? n : "object";
-            Plugin.Warn($"CarriageTracker: {what} {d.E.Index}:{d.E.Version} still exists {Math.Round((now - d.Since).TotalSeconds)} s after the mod destroyed it");
-            Dying[k] = (d.E, d.Since, true);
-        }
-    }
-
-    static void Kill(EntityManager em, Entity e, DateTime now)
-    {
-        if (e == Entity.Null || !em.Exists(e) || IsDying(e)) return;
-        DestroyUtility.Destroy(em, e);
-        Dying[Key(e)] = (e, now, false);
-    }
+    static bool IsDying(Entity e) => Doomed.IsDying(e);
+    static void Kill(EntityManager em, Entity e, DateTime now) => Doomed.Kill(em, e, now);
 
     // Destroys a marker together with its icons, through the game's destroy pipeline (DestroyUtility), as the mod
     // removes units and carts: markers are networked objects, and the game says itself (server log 05.11) that
@@ -320,7 +300,7 @@ static class Proxies
     public static (int Created, int Removed, int Globalized) Sync(EntityManager em, PrefabCollectionSystem prefabs, List<Caravans.Caravan> caravans)
     {
         var now = DateTime.UtcNow;
-        PruneDying(em, prefabs, now);
+        Doomed.Prune(em, prefabs, now);
         int iconGuid = Settings.IconGuid;
         var current = new HashSet<int> { iconGuid };
         var kinds = Icons.Ours();
@@ -429,5 +409,40 @@ static class MapIconSpawnPatch
         if (!Proxies.HasPending) return;
         try { Proxies.GlobalizeNewIcons(); }
         catch (Exception e) { Plugin.Error($"CarriageTracker: {e}"); }
+    }
+}
+
+// Map icons and markers the mod handed to the game's destroy pipeline (DestroyUtility), for both icon kinds
+// (Icons on caravans, Proxies' markers). The game removes them a frame or more later; until then they are skipped,
+// so a check right after another one doesn't count, keep or destroy them again. One the game still hasn't removed
+// a minute later is written to the log once (and stays skipped). Until 1.0.18 icons on caravans were removed with
+// StatChangeUtility.KillOrDestroyEntity without this list (audit of 07.11).
+static class Doomed
+{
+    static readonly TimeSpan Warn = TimeSpan.FromMinutes(1);
+    static readonly Dictionary<(int, int), (Entity E, DateTime Since, bool Warned)> Queued = new();
+    static (int, int) Key(Entity e) => (e.Index, e.Version);
+
+    public static bool IsDying(Entity e) => Queued.ContainsKey(Key(e));
+
+    public static void Kill(EntityManager em, Entity e, DateTime now)
+    {
+        if (e == Entity.Null || !em.Exists(e) || IsDying(e)) return;
+        DestroyUtility.Destroy(em, e);
+        Queued[Key(e)] = (e, now, false);
+    }
+
+    // Forgets objects the game has removed; tells about one it hasn't removed for a minute.
+    public static void Prune(EntityManager em, PrefabCollectionSystem prefabs, DateTime now)
+    {
+        foreach (var k in new List<(int, int)>(Queued.Keys))
+        {
+            var d = Queued[k];
+            if (!em.Exists(d.E)) { Queued.Remove(k); continue; }
+            if (d.Warned || now - d.Since < Warn) continue;
+            string what = Caravans.Has<PrefabGUID>(em, d.E) && prefabs._PrefabLookupMap.TryGetName(em.GetComponentData<PrefabGUID>(d.E), out string n) ? n : "object";
+            Plugin.Warn($"CarriageTracker: {what} {d.E.Index}:{d.E.Version} still exists {Math.Round((now - d.Since).TotalSeconds)} s after the mod destroyed it");
+            Queued[k] = (d.E, d.Since, true);
+        }
     }
 }
