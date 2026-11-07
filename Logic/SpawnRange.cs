@@ -4,7 +4,9 @@ namespace CarriageTracker;
 // PlayerRange (x, y): the game spawns the squad only for a player within y meters of the patrol point.
 public static class SpawnRange
 {
-    // The game's own range, seen on every route of a live server.
+    // The game's own range, seen on every route of a live server. The mod reads each route's normal values from
+    // the route's prefab (Starter.NormalOf) and uses these only when the prefab's values are missing or odd
+    // (SaneRange, SaneTimers), so a game update that changes them doesn't get the old ones written back.
     public const float NormalY = 90f;
     // Source = Mod: nobody stands within 1 mm of a patrol point, so the game doesn't spawn. Kept above 0
     // on purpose, in case the game takes 0 for "no limit".
@@ -19,6 +21,11 @@ public static class SpawnRange
     public static bool IsZero(float x, float y) => x == 0f && y == 0f;
     public static bool IsStart(float x, float y) => y > 1000f;
 
+    // A prefab's range that can be the game's normal one: not blocked, not zero, not a start range.
+    public static bool SaneRange(float y) => !float.IsNaN(y) && y >= 1f && y <= 1000f;
+    // A prefab's respawn timers that can be the game's normal ones (a start sets both to 0).
+    public static bool SaneTimers(double min, double max) => min > 0 && max >= min;
+
     // A route with no caravan out: waiting for a new squad, or standing at its last stop until the game removes
     // what is left and returns it to the start (WaitingForDespawn). The second kind must be blocked too: a player
     // coming near wakes it, the game resets it and would spawn its own squad before the next check.
@@ -27,17 +34,18 @@ public static class SpawnRange
     // Source: what to write into a route that isn't being started by the mod; null = leave it.
     // With Mod a route waiting for a new squad is blocked; any other route gets the game's range back
     // if it is blocked (or zero, which an earlier version could leave).
-    public static float? SourceTarget(bool modOnly, bool waitingForSpawn, float x, float y)
+    // normalY: the route's own range (from its prefab, NormalY if unknown).
+    public static float? SourceTarget(bool modOnly, bool waitingForSpawn, float x, float y, float normalY = NormalY)
     {
         if (modOnly && waitingForSpawn) return IsBlocked(x, y) ? null : BlockedY;
-        return IsBlocked(x, y) || IsZero(x, y) ? NormalY : null;
+        return IsBlocked(x, y) || IsZero(x, y) ? normalY : null;
     }
 
     // End of a start's assembly window: the saved range comes back, but a blocked or zero one becomes the
     // game's range, so the squad on the road behaves as the game's own. The block returns once the route
     // waits for a new squad (SourceTarget).
-    public static float RestoreY(float savedX, float savedY) =>
-        IsBlocked(savedX, savedY) || IsZero(savedX, savedY) ? NormalY : savedY;
+    public static float RestoreY(float savedX, float savedY, float normalY = NormalY) =>
+        IsBlocked(savedX, savedY) || IsZero(savedX, savedY) ? normalY : savedY;
 
     // .cv cleanup: everything the mod may have written becomes the game's range.
     public static bool CleanupOpens(float x, float y) => IsBlocked(x, y) || IsZero(x, y) || IsStart(x, y);

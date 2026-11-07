@@ -20,7 +20,9 @@ set -euo pipefail
 
 # alpine/git pinned by digest (tag 2.54.0), so a changed image can't run on the server unnoticed.
 GIT_IMAGE=alpine/git:2.54.0@sha256:e8ceedc73bd80992ae8d58a7d24c58b8322146c354f1d2e81a97db4452068ec0
-SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:6.0
+# The .NET SDK pinned by digest too (the image deploys used until 1.0.19, as on the server 07.11). 6.0 is out of
+# support and no longer rebuilt, so this digest stays the image of the tag.
+SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:6.0@sha256:c8fdd06e430de9f4ddd066b475ea350d771f341b77dd5ff4c2fafa748e3f2ef2
 
 main() {
   local server="${1:?usage: tools/deploy.sh /path/to/server}"

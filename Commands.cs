@@ -133,7 +133,7 @@ public class Commands
         ctx.Reply(text);
 
         var online = Acts.Online(em, prefabs);
-        if (online.Count > 1)
+        if (online.Count > 1 && (Settings.ShowOthersActs.Value || ctx.Event.User.IsAdmin))
         {
             var parts = new List<string>();
             foreach (var p in online) parts.Add($"{p.Name} - {L.Act(p.Act.Act)}");

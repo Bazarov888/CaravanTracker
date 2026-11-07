@@ -25,6 +25,7 @@ static class Settings
     internal static ConfigEntry<int> AnnounceRadius;
     internal static ConfigEntry<bool> AnnounceVanilla;
     internal static ConfigEntry<bool> RouteCommandsForAll;
+    internal static ConfigEntry<bool> ShowOthersActs;
     internal static ConfigEntry<bool> Welcome;
     internal static ConfigEntry<string> WelcomeEn;
     internal static ConfigEntry<string> WelcomeRu;
@@ -111,6 +112,8 @@ static class Settings
             "Your own Russian welcome line instead of the mod's. Empty = the mod's. A Russian letter takes 2 bytes, so at most about 200 letters.");
         RouteCommandsForAll = cfg.Bind("Chat", "RouteCommandsForAll", true,
             "Let every player use .cv routes and .cv rm, which show where all caravan routes are. false = admins only.");
+        ShowOthersActs = cfg.Bind("Chat", "ShowOthersActs", true,
+            "In .cv act, list the act of every player online. On a PvP server that tells who is how far; false = only admins see the list.");
         TitleColor = cfg.Bind("Chat", "TitleColor", "#FFC83C", "Color of the first announcement line (caravan name).");
         TextColor = cfg.Bind("Chat", "TextColor", "#FFFFFF", "Color of the second announcement line (distance and direction).");
         CommandColor = cfg.Bind("Chat", "CommandColor", "#7CFC7C", "Color of the command in the announcement.");

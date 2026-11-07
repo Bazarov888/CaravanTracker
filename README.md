@@ -85,6 +85,7 @@ For admins:
 | Chat | AnnounceRadius | `1500` | Meters for `Nearby` |
 | Chat | AnnounceVanilla | `true` | Also announce carriages the game spawned by itself; `false` = only the mod's |
 | Chat | RouteCommandsForAll | `true` | `.cv r` and `.cv rm` for every player; `false` = admins only |
+| Chat | ShowOthersActs | `true` | `.cv a` also lists the act of every player online; `false` = only admins see that list (on a PvP server it tells who is how far) |
 | Chat | Welcome | `true` | Two lines to a player who has just come into the world: what the mod does and how to pick the language |
 | Chat | WelcomeEn, WelcomeRu | empty | Your own welcome lines instead of the mod's; color tags work, about 450 bytes at most (a Russian letter is 2 bytes) |
 | Chat | TitleColor, TextColor, CommandColor | gold, white, green | Announcement colors |
@@ -143,6 +144,8 @@ dotnet build -c Release
 Reference assemblies come from NuGet (nuget.org and nuget.bepinex.dev). To build against an installed server instead: `dotnet build -c Release -p:BepDir=/path/to/server/BepInEx`.
 
 Tests of the decision logic need only the .NET 8 SDK, no game files: `dotnet run --project tests`.
+
+The mod targets `net6.0` because BepInEx for V Rising (IL2CPP) runs on .NET 6; a newer target would not load. .NET 6 itself is out of support and gets no more security updates. That matters only for the build tools, not for the server: the mod runs inside the game's own BepInEx.
 
 A Release build also produces the Thunderstore package `dist/CarriageTracker-<version>.zip`. The version is written only in `CarriageTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
 
