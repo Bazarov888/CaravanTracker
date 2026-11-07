@@ -117,8 +117,8 @@ Not verified, treated as assumptions:
   1000-2700 s) are used only when the prefab's values can't be read or look wrong, with a warning per prefab. Until
   1.0.18 the constants were always written (audit of 07.11).
 - A start writes into the route step by step and is tracked only once it is in `Runs`. An error before that
-  (`Starter.TryStart`) queues the route for repair (back to normal within 5 s) and marks it failed, so auto-start
-  skips it for an hour; auto-start counts a start only when it happened.
+  (`Starter.TryStart`) repairs the route at once (`RepairRoute`; if that fails too, it is queued and retried every
+  5 s) and marks it failed, so auto-start skips it for an hour; auto-start counts a start only when it happened.
 - Fields and types read by name (spawner range and timers, the freeze tags, stop indexes, `PatrolBusStopNode`)
   are checked once at the first check (`GameCheck`). If one a start can't be undone without is missing, starts,
   auto-start and `Source = Mod` are off (blocked routes are opened again) with one error in the log; tracking,
@@ -138,8 +138,10 @@ run a check at once.
 
 All world access is on the main thread. Each step has its own try/catch, so an error in one doesn't stop the others.
 
-Chat messages are cut to 509 bytes of UTF-8 (`ChatText.Fit`, what `FixedString512Bytes` holds), on a whole
-character and not inside a rich text tag; a cut text is logged once.
+Messages the mod sends itself (announcements, welcome lines, start results; `Chat.Send`) are cut to 509 bytes of
+UTF-8 (`ChatText.Fit`, what `FixedString512Bytes` holds), on a whole character and not inside a rich text tag; a
+cut text is logged once. Command replies (`ctx.Reply`) go through VampireCommandFramework and are packed into short
+lines by the commands (`ChatLines.Pack`).
 
 `Plugin.Unload` (a runtime unload) sets `Ticker.Stopped`, gives the world back what the mod changed the way
 `.cv cleanup` does, destroys the `Ticker` and then removes the commands and the patch.

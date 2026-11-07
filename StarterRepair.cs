@@ -37,17 +37,25 @@ static partial class Starter
 
     internal static Normal NormalOf(EntityManager em, Entity patrol)
     {
-        if (!em.Exists(patrol) || !Caravans.Has<PrefabGUID>(em, patrol)) return Defaults;
-        var guid = em.GetComponentData<PrefabGUID>(patrol);
-        if (Normals.TryGetValue(guid.GuidHash, out var known)) return known;
-        var world = Caravans.ServerWorld();
-        var prefabs = world == null ? null : Caravans.Prefabs(world);
+        // Never throws: ApplySource asks for every route every 5 seconds, and an error here must not stop the loop.
+        PrefabGUID guid;
+        PrefabCollectionSystem prefabs;
+        try
+        {
+            if (!em.Exists(patrol) || !Caravans.Has<PrefabGUID>(em, patrol)) return Defaults;
+            guid = em.GetComponentData<PrefabGUID>(patrol);
+            if (Normals.TryGetValue(guid.GuidHash, out var known)) return known;
+            var world = Caravans.ServerWorld();
+            prefabs = world == null ? null : Caravans.Prefabs(world);
+        }
+        catch { return Defaults; }
         if (prefabs == null) return Defaults;   // not cached: tried again once the prefabs are there
         var n = Defaults;
         string why = "the prefab has no spawner";
-        string name = prefabs._PrefabLookupMap.TryGetName(guid, out string pn) ? pn : guid.GuidHash.ToString();
+        string name = guid.GuidHash.ToString();
         try
         {
+            if (prefabs._PrefabLookupMap.TryGetName(guid, out string pn)) name = pn;
             if (prefabs._PrefabGuidToEntityMap.TryGetValue(guid, out Entity prefab) && Caravans.Has<UnitCompositionSpawner>(em, prefab))
             {
                 object b = em.GetComponentData<UnitCompositionSpawner>(prefab);

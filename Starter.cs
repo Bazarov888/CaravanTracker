@@ -139,8 +139,8 @@ static partial class Starter
     // true if the caravan is being started. A start writes into the route step by step (the old squad removed,
     // spawner range and timers, the freeze tags) and is tracked only from its end (Runs). Until 1.0.18 an error in
     // between left the route with the start's endless range and zero timers until the server restarted, as
-    // RepairLeftovers runs once after the start (audit of 07.11). Now such a route is queued for repair (back to
-    // normal within 5 seconds, RetryRepairs) and auto-start skips it for an hour (RecentlyFailed).
+    // RepairLeftovers runs once after the start (audit of 07.11). Now such a route is repaired at once (or, if that
+    // fails, every 5 seconds by RetryRepairs) and auto-start skips it for an hour (RecentlyFailed).
     public static bool TryStart(EntityManager em, Routes.Route route, Entity userEntity, out string text,
                                 bool auto = false, int act = 0, string note = "")
     {
@@ -158,14 +158,26 @@ static partial class Starter
         catch (Exception e)
         {
             bool tracked = IsRunning(patrol);
+            string after = "; the start goes on and is tracked";
             if (!tracked)
             {
-                QueueRepair(patrol, route.Key);
+                // Repaired at once, so the game can't spawn an untracked squad with the start's settings in between;
+                // if that fails too, every 5 seconds (RetryRepairs).
                 FailedAt[Key(patrol)] = DateTime.UtcNow;
+                BlockedRoutes.Remove(Key(patrol));
+                try
+                {
+                    RepairRoute(em, route);
+                    after = "; its settings were given back, auto-start skips it for an hour";
+                }
+                catch (Exception e2)
+                {
+                    QueueRepair(patrol, route.Key);
+                    after = $"; giving its settings back failed too ({e2.Message}), tried again every 5 s; auto-start skips it for an hour";
+                }
             }
-            Plugin.Error($"CarriageTracker start: route {route.Key} patrol {patrol.Index}:{patrol.Version} failed: {e}" +
-                         (tracked ? "; the start goes on and is tracked" : "; its settings are given back within 5 s, auto-start skips it for an hour"));
-            text = L.T(tracked ? "start.goingon" : "start.failed", name);
+            Plugin.Error($"CarriageTracker start: route {route.Key} patrol {patrol.Index}:{patrol.Version} failed: {e}{after}");
+            text = L.T(tracked ? "start.goingon" : "start.error", name);
             return tracked;
         }
     }
