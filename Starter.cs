@@ -167,8 +167,9 @@ static partial class Starter
                 BlockedRoutes.Remove(Key(patrol));
                 try
                 {
-                    RepairRoute(em, route);
-                    after = "; its settings were given back, auto-start skips it for an hour";
+                    after = RepairRoute(em, route)
+                        ? "; its settings were given back, auto-start skips it for an hour"
+                        : "; nothing of the start had been written into it yet, auto-start skips it for an hour";
                 }
                 catch (Exception e2)
                 {
