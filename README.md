@@ -149,7 +149,9 @@ The mod targets `net6.0` because BepInEx for V Rising (IL2CPP) runs on .NET 6; a
 
 A Release build also produces the Thunderstore package `dist/CarriageTracker-<version>.zip`. The version is written only in `CarriageTracker.csproj` (`<Version>`); `MyPluginInfo` for the code and the package's `manifest.json` are generated from it at build time.
 
-How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](ARCHITECTURE.md).
+A new version in `CarriageTracker.csproj` merged to `main` gets its GitHub Release by itself (`release.yml`) and is then published to Thunderstore (`thunderstore.yml`), once the repository has the secret `THUNDERSTORE_KEY` (a Thunderstore team's service account token) and the variable `THUNDERSTORE_TEAM` (the team's name). An existing release can be published by hand: Actions → thunderstore → Run workflow, with its version.
+
+How the mod works inside (patrols, starts, the spawn block, repair) is described in [ARCHITECTURE.md](https://github.com/Bazarov888/CarriageTracker/blob/main/ARCHITECTURE.md).
 
 Every push and pull request is built and tested by GitHub Actions. A new version merged into `main` gets its GitHub Release with the DLL and the package by itself (`release.yml`).
 
