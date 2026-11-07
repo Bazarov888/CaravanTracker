@@ -10,7 +10,7 @@ After an outside code audit (07.11):
 - Icons on carriages are removed through the game's destroy pipeline with the same list as map markers (1.0.17), so an icon queued for removal isn't counted or removed again on the next check.
 - Chat messages longer than a chat line holds (509 bytes; a Russian letter is 2) are cut on a whole character and not inside a color tag, with a warning in the log. Before, a long welcome line from the config could be cut inside a tag.
 - New setting `Chat.ShowOthersActs` (default `true`, as before): `.cv act` lists the act of every player online; `false` shows that list only to admins, for PvP servers.
-- GitHub Actions are pinned by commit SHA. The README says why the mod targets .NET 6 and that it is out of support.
+- GitHub Actions are pinned by commit SHA, and `tools/deploy.sh` pins the .NET SDK image by digest like the git image. The README says why the mod targets .NET 6 and that it is out of support.
 
 ## 1.0.18
 
